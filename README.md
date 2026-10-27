@@ -33,3 +33,9 @@ The app is a PWA: it has a web manifest, install icons, an offline fallback, a s
 - Account: editable profile and target history, push preferences/devices, notification history, sign out, and CSV export.
 
 All app data is scoped to the signed-in user, with server-side ownership checks and Supabase row-level security. Nutrition targets are estimates based on the profile and the Mifflin–St Jeor formula; users can set manual targets.
+
+## Meal ideas, starter plan and AI
+
+Nutrition includes 24 meal ideas. Select one and enter nutrition values for your own ingredients and portion before adding it to your diary or plan. Train offers an editable three-day full-body starter plan; add it and select **Set active** when ready. Neither feature creates workout history or food consumption automatically.
+
+The optional assistant on Train and Nutrition uses the OpenAI Responses API. Set server-only `OPENAI_API_KEY` and `AI_ALLOWED_EMAILS` (a comma-separated list of allowed account email addresses) in `.env.local` and in Vercel (then redeploy). `OPENAI_MODEL` is optional and defaults to `gpt-4.1-mini`. Requests may incur OpenAI API charges. Only the question and its topic are sent; account and tracker data are not included automatically. AI suggestions do not change saved records. Restrict signups or add durable per-user rate limiting and usage controls before making a deployment available to untrusted users.

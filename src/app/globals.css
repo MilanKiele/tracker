@@ -21,3 +21,20 @@
 @media(prefers-color-scheme:dark){.week-day-chip,.body-regions-grid button,.measurement-table>div,.goal-milestone-list span{background:#28342b;border-color:#3a473b}.real-heat-cell{background:#344137}.heat-1{background:#405844}.heat-2{background:#57795b}.heat-3{background:#739776}.heat-4{background:#99b99a}.entry-form input,.entry-form select,.field-label input,.field-label select,.account-profile-form input,.account-profile-form select,.insight-range input,.notification-time-fields input,.goal-form input,.goal-form select{background:#28342b;border-color:#3a473b;color:#bdcabe}.pwa-install-banner{background:#222d25;border-color:#364338}}
 .target-editor-card{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;padding:15px}.target-editor-card h3{font-size:14px}.target-fields{display:grid;grid-template-columns:repeat(4,minmax(90px,1fr));gap:9px;margin:12px 0}.target-fields label,.meal-entry-edit label{display:grid;gap:4px;font-size:10px;color:var(--text-soft)}.target-fields input,.meal-entry-edit input,.meal-entry-edit select{min-width:0;padding:7px;border:1px solid var(--line);border-radius:6px;background:var(--surface-soft);color:var(--text)}.meal-entry-edit{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:8px 0}.meal-entry-edit label:has(input[type=checkbox]){display:flex;align-items:center}.meal-entry-edit button{align-self:end}@media(max-width:760px){.target-editor-card{align-items:flex-start;flex-direction:column}.target-fields{grid-template-columns:repeat(2,1fr);width:100%}.meal-entry-edit{grid-template-columns:repeat(2,1fr)}}
 .logged-set-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface-soft);border-radius:6px;padding:5px 7px;margin:3px;font-size:10px}.logged-set-chip .quiet-link{font-size:9px}.workout-set-edit{display:flex;align-items:end;gap:7px;flex-wrap:wrap;padding:8px 0}.workout-set-edit label{display:grid;gap:3px;font-size:9px;color:var(--muted)}.workout-set-edit input:not([type=checkbox]){width:80px;padding:6px;border:1px solid var(--line);border-radius:5px;background:var(--surface-soft)}
+
+/* Clear, compact starting points for meals and training. */
+.starter-card { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin-bottom: 1rem; }
+.starter-card p, .starter-card small { color: #66746d; line-height: 1.5; }
+.starter-card .button { flex-shrink: 0; }
+.meal-ideas, .assistant-card { margin: 1rem 0; }
+.meal-ideas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .6rem; max-height: 24rem; overflow-y: auto; margin-top: 1rem; }
+.meal-idea { text-align: left; border: 1px solid #e1e8e1; background: #fafcf9; border-radius: 12px; padding: .85rem; cursor: pointer; }
+.meal-idea b, .meal-idea small { display: block; }
+.meal-idea small { margin-top: .35rem; line-height: 1.4; color: #66746d; }
+.meal-idea:hover, .meal-idea.selected { border-color: #76957d; background: #f0f6ef; }
+.idea-entry { margin-top: 1rem; }
+.assistant-card summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; cursor: pointer; list-style: none; }
+.assistant-card summary::-webkit-details-marker { display: none; }
+.assistant-card summary small { color: #66746d; }
+.assistant-answer { white-space: pre-wrap; line-height: 1.6; padding: 1rem; border-radius: 12px; background: #f4f8f3; }
+@media (max-width: 640px) { .starter-card { align-items: stretch; flex-direction: column; } .meal-ideas-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

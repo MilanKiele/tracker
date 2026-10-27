@@ -131,3 +131,53 @@ export async function exportMyData() {
   const escape = (cell: string) => `"${cell.replaceAll('"', '""')}"`;
   return ["table,record_json", ...results.flatMap(({ table, data }) => (data.data ?? []).map((row: any) => `${escape(table)},${escape(JSON.stringify(row))}`))].join("\r\n");
 }
+
+/** Add an editable starter plan only when the user chooses it. */
+export async function addStarterPlan() {
+  const { supabase, user } = await ownedClient();
+  const movements = [
+    { name: "Goblet squat", primary_muscle: "Legs", equipment: "Dumbbell", movement_type: "free_weight" },
+    { name: "Dumbbell bench press", primary_muscle: "Chest", equipment: "Dumbbell", movement_type: "free_weight" },
+    { name: "Seated cable row", primary_muscle: "Back", equipment: "Cable", movement_type: "cable" },
+    { name: "Romanian deadlift", primary_muscle: "Hamstrings", equipment: "Dumbbell", movement_type: "free_weight" },
+    { name: "Lat pulldown", primary_muscle: "Back", equipment: "Machine", movement_type: "machine" },
+    { name: "Dumbbell shoulder press", primary_muscle: "Shoulders", equipment: "Dumbbell", movement_type: "free_weight" },
+    { name: "Plank", primary_muscle: "Core", equipment: "Bodyweight", movement_type: "bodyweight" },
+  ];
+  const ids: Record<string, string> = {};
+  for (const exercise of movements) {
+    const existing = await supabase.from("exercises").select("id,archived_at").eq("user_id", user.id).eq("name", exercise.name).maybeSingle();
+    fail(existing.error);
+    if (existing.data) {
+      ids[exercise.name] = existing.data.id;
+      if (existing.data.archived_at) { const restored = await supabase.from("exercises").update({ archived_at: null }).eq("user_id", user.id).eq("id", existing.data.id); fail(restored.error); }
+    } else {
+      const inserted = await supabase.from("exercises").insert({ ...exercise, user_id: user.id }).select("id").single();
+      fail(inserted.error);
+      if (!inserted.data) throw new Error("Could not create starter exercise.");
+      ids[exercise.name] = inserted.data.id;
+    }
+  }
+  const result = await supabase.from("training_plans").insert({ user_id: user.id, name: "Full body · 3 days", description: "A flexible beginner-friendly starting point. Adjust exercises and days to suit you." }).select("id").single();
+  fail(result.error);
+  if (!result.data) throw new Error("Could not create the plan.");
+  const planId = result.data.id;
+  try {
+    const days = [
+      { name: "Full body A", weekday: 0, exercises: ["Goblet squat", "Dumbbell bench press", "Seated cable row", "Plank"] },
+      { name: "Full body B", weekday: 2, exercises: ["Romanian deadlift", "Lat pulldown", "Dumbbell shoulder press", "Plank"] },
+      { name: "Full body A", weekday: 4, exercises: ["Goblet squat", "Dumbbell bench press", "Seated cable row", "Plank"] },
+    ];
+    for (const [index, day] of days.entries()) {
+      const saved = await supabase.from("plan_days").insert({ user_id: user.id, plan_id: planId, name: day.name, day_order: index + 1, weekday: day.weekday, is_rest_day: false }).select("id").single();
+      fail(saved.error);
+      if (!saved.data) throw new Error("Could not create plan day.");
+      const entries = day.exercises.map((name, i) => ({ user_id: user.id, day_id: saved.data!.id, exercise_id: ids[name], exercise_order: i + 1, target_sets: 3, rep_min: name === "Plank" ? 20 : 8, rep_max: name === "Plank" ? 30 : 12, rest_seconds: 90, notes: name === "Plank" ? "Hold for 20–30 seconds per set." : "Choose a manageable weight and focus on technique." }));
+      const inserted = await supabase.from("plan_exercises").insert(entries); fail(inserted.error);
+    }
+  } catch (error) {
+    await supabase.from("training_plans").delete().eq("id", planId).eq("user_id", user.id);
+    throw error;
+  }
+  revalidatePath("/train"); revalidatePath("/");
+}

@@ -31,7 +31,7 @@ export async function getTodayData(dateValue?: string) {
   const endDate = format(end, "yyyy-MM-dd");
   const uid = ctx.user.id;
   const supabase = await createClient();
-  const [planResult, sessionsResult, mealsResult, measuresResult, journalResult, waterResult, targetResult] = await Promise.all([
+  const [planResult, sessionsResult, mealsResult, measuresResult, journalResult, waterResult, targetResult, foodsResult] = await Promise.all([
     supabase.from("training_plans").select("id,name,description").eq("user_id", uid).eq("is_active", true).is("archived_at", null).maybeSingle(),
     supabase.from("workout_sessions").select("id,title,started_at,finished_at,duration_seconds,total_volume").eq("user_id", uid).gte("started_at", `${startDate}T00:00:00`).lte("started_at", `${endDate}T23:59:59`).is("archived_at", null).order("started_at"),
     supabase.from("meal_entries").select("id,entry_date,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g,is_planned,review_status,notes").eq("user_id", uid).gte("entry_date", startDate).lte("entry_date", endDate).is("archived_at", null).order("created_at"),
@@ -39,6 +39,7 @@ export async function getTodayData(dateValue?: string) {
     supabase.from("daily_journal").select("id,entry_date,sleep_hours,mood,energy,notes").eq("user_id", uid).gte("entry_date", startDate).lte("entry_date", endDate),
     supabase.from("water_entries").select("id,entry_date,amount_ml").eq("user_id", uid).gte("entry_date", startDate).lte("entry_date", endDate),
     supabase.from("nutrition_targets").select("kcal,protein_g,carbs_g,fat_g,effective_from,is_manual,calculation").eq("user_id", uid).lte("effective_from", endDate).order("effective_from", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("foods").select("*").eq("user_id", uid).is("archived_at", null).order("name"),
   ]);
   const plan = planResult.data;
   let planDays: any[] = [];
@@ -68,7 +69,7 @@ export async function getTodayData(dateValue?: string) {
       waterMl: rows(waterResult.data).filter((item: any) => item.entry_date === key).reduce((sum: number, item: any) => sum + item.amount_ml, 0),
     };
   });
-  return { context: ctx, days, activePlan: plan, target: targetResult.data, startDate, endDate, selectedDate: format(date, "yyyy-MM-dd") };
+  return { context: ctx, days, foods: rows(foodsResult.data), activePlan: plan, target: targetResult.data, startDate, endDate, selectedDate: format(date, "yyyy-MM-dd") };
 }
 export async function getNutritionData(dateValue?: string) {
   const ctx = await requireReadyContext();
