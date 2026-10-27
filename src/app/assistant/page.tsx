@@ -16,7 +16,7 @@ export default async function AssistantPage({
   const mode = params.mode === "plan" ? "plan" : "food";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(params.date ?? "")
     ? params.date!
-    : new Date().toISOString().slice(0, 10);
+    : "";
   return (
     <AppShell profile={context.profile} email={context.user?.email}>
       <AssistantWorkspace initialMode={mode} initialDate={date} />

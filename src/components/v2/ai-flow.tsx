@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -22,7 +22,7 @@ import {
   type FoodDraft,
   type PlanDraft,
 } from "@/lib/ai/schema";
-import { fmt, slots, useFeedback } from "./ui";
+import { fmt, slots, today, useFeedback } from "./ui";
 
 type Mode = "plan" | "food";
 const AiContext = createContext<{
@@ -72,6 +72,7 @@ export async function resizePhoto(file: File): Promise<string> {
     URL.revokeObjectURL(url);
   }
 }
+const useBrowserToday = () => useSyncExternalStore(() => () => {}, today, () => "");
 
 type Message = { role: "user" | "assistant"; content: string; display: string };
 type Conversation = { id: string; title: string; mode: Mode; updated_at: string };
@@ -105,6 +106,8 @@ export function AssistantWorkspace({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [date, setDate] = useState(initialDate);
+  const localDate = useBrowserToday();
+  const effectiveDate = date || localDate;
   const [slot, setSlot] = useState("lunch");
   const [destination, setDestination] = useState("diary");
   const [portions, setPortions] = useState<number[]>([]);
@@ -246,7 +249,7 @@ export function AssistantWorkspace({
         body: JSON.stringify({
           mode: activeMode,
           conversation_id: conversationId || undefined,
-          context_date: date,
+          context_date: effectiveDate || today(),
           messages: history
             .slice(-10)
             .map(({ role, content }) => ({ role, content })),
@@ -317,7 +320,7 @@ export function AssistantWorkspace({
         await importFood({
           mutation_id: mutation.current,
           foods,
-          date,
+          date: effectiveDate || today(),
           slot,
           destination,
         });
@@ -478,7 +481,7 @@ export function AssistantWorkspace({
                     Datum
                     <input
                       type="date"
-                      value={date}
+                      value={effectiveDate}
                       onChange={(e) => setDate(e.target.value)}
                       required
                     />
