@@ -131,58 +131,12 @@ hr {
 .app-frame {
   min-height: 100dvh;
 }
-.loading-frame {
-  min-height: 100dvh;
-  padding: 22px clamp(18px, 5vw, 64px);
-  background: var(--bg);
-}
-.loading-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--forest);
-  font-size: 14px;
-}
-.loading-header > span:last-child {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12px;
-}
-.loading-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: var(--lime);
-}
-.loading-nav {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 24px auto 0;
-  padding: 5px;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: white;
-}
-.loading-nav a {
-  padding: 8px 12px;
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.loading-nav a[aria-current="page"] {
-  background: var(--forest);
-  color: white;
-}
 .loading-content {
   width: min(980px, 100%);
-  margin: 7vh auto 0;
+  margin: 0 auto;
+}
+.loading-skeleton {
+  padding-top: 4px;
 }
 .loading-bar,
 .loading-cards i,
@@ -198,7 +152,7 @@ hr {
 .loading-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .loading-cards i { height: 105px; }
 .loading-panel { height: 270px; margin-top: 16px; }
-.loading-content p { color: var(--muted); font-size: 11px; text-align: center; margin-top: 18px; }
+.loading-content p { color: var(--muted); font-size: 11px; display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 18px; }
 @keyframes loading-shimmer { to { background-position: -250% 0; } }
 .sidebar {
   position: fixed;
