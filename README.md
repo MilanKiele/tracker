@@ -4,7 +4,7 @@ Minimaler Wellness-Tracker mit Next.js 16, Supabase und OpenRouter. Overview, Tr
 
 ## Bestehendes Projekt aktualisieren
 
-1. Im **vorhandenen Supabase-Projekt** nur die neue Datei [Migration 004](supabase/migrations/202610270004_ai_native.sql) im SQL Editor ausführen oder mit der bereits verbundenen Supabase CLI `supabase db push` nutzen. Bereits angewandte Migrationen 001–003 nicht nochmals ausführen.
+1. Im **vorhandenen Supabase-Projekt**, dessen URL als `NEXT_PUBLIC_SUPABASE_URL` in Vercel steht, den SQL Editor öffnen. Den **gesamten Inhalt von [supabase/setup.sql](supabase/setup.sql)** in eine neue Abfrage kopieren und ausführen. Die Datei ergänzt eine leere App-Datenbank, teilweise ausgeführte Migrationen und einen bereits vollständigen Stand. Wiederholte Ausführung ist möglich. Bereits vorhandene Aufzeichnungen werden nicht gelöscht. Bei Verwendung einer bereits gepflegten Supabase-CLI-Migrationshistorie weiterhin die versionierten Migrationen mit `supabase db push` anwenden.
 2. Die bisherigen Supabase- und Push-Variablen in Vercel beibehalten. Für Chat und Fotos zusätzlich den **serverseitigen** `OPENROUTER_API_KEY` setzen. `OPENROUTER_MODEL=openrouter/free` ist der Standard. `SITE_URL` in Produktion auf `https://tracker-jet-one.vercel.app` setzen.
 3. Neu deployen. `AI_ALLOWED_EMAILS` kann den KI-Zugriff auf bestimmte Konto-Adressen begrenzen (Komma-getrennt). Ohne Liste dürfen alle angemeldeten Konten die KI nutzen.
 
@@ -16,7 +16,7 @@ Die ursprüngliche Version wurde lokal vor dem Umbau nach `/home/enderman/Projec
 
 Node.js 22.18 oder neuer verwenden. `npm ci`, `.env.example` nach `.env.local` kopieren und die **bisherige** Supabase-URL sowie den öffentlichen Anon-/Publishable-Key einsetzen. Danach `npm run dev`.
 
-Für eine vollständig neue Datenbank Migrationen 001–004 in Reihenfolge anwenden. Öffentliche Supabase-Variablen müssen zur Build-Zeit auch in Vercel vorhanden sein. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` funktioniert alternativ zu `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Private Schlüssel erhalten niemals das Präfix `NEXT_PUBLIC_`.
+Für die Einrichtung über den Supabase SQL Editor die vollständige Datei `supabase/setup.sql` ausführen. Die Datei enthält alle aktuellen Tabellen und Funktionen, ohne die frühere automatische Beispieldaten-Erzeugung. Öffentliche Supabase-Variablen müssen zur Build-Zeit auch in Vercel vorhanden sein. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` funktioniert alternativ zu `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Private Schlüssel erhalten niemals das Präfix `NEXT_PUBLIC_`.
 
 ## KI-Abläufe
 
@@ -47,3 +47,11 @@ Der Vercel-Hobby-Cron läuft täglich um **07:00 UTC** mit bis zu 59 Minuten Zei
 - `npm run build`
 - `npm run test:ai` prüft Portionen, Nährwert-Validierung, Datum und Planstruktur.
 - `npm run test:db` führt die echten Migrationen in einer isolierten PGlite-Postgres-Datenbank aus. Geprüft werden Import-Rollback, Wiederholungen, volle Portionen, Bibliothekswerte, Training, Rekorde, Quoten und Zugriffstrennung zwischen zwei Konten. Es wird keine Verbindung zur echten Supabase-Datenbank aufgebaut.
+
+## Fehler: `relation public.meal_entries does not exist`
+
+Migration 004 ist ein Upgrade und setzt die Basistabellen aus 001 voraus. Der Fehler bedeutet, dass diese Basistabelle im ausgewählten Projekt fehlt. Ausschließlich Zugangsdaten in Vercel zu hinterlegen erstellt noch keine Tabellen.
+
+Im **selben Supabase-Projekt wie die Vercel-Projekt-URL** die gesamte Datei [`supabase/setup.sql`](supabase/setup.sql) im SQL Editor ausführen. Sie läuft in einer Transaktion, erstellt fehlende App-Tabellen und Funktionen und bewahrt vorhandene Datensätze. Sie kann wiederholt ausgeführt werden. Bei unbekannten, inkompatiblen eigenen Tabellenstrukturen bricht sie ab, statt bestehende Tabellen zu ersetzen. Danach die App neu laden; für die SQL-Einrichtung allein ist kein Vercel-Redeploy nötig.
+
+`npm run db:setup` erzeugt diese Datei aus den versionierten Schema-Quellen neu. `npm run test:setup` prüft eine leere Datenbank, teilweise vorhandene Tabellen, wiederholte Ausführung auf einem vollständigen Projekt und den Transaktionsabbruch bei inkompatiblen Tabellen. Die SQL-Editor-Datei schreibt keine Supabase-CLI-Migrationshistorie.
