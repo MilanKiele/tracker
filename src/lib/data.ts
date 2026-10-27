@@ -153,7 +153,7 @@ export async function getTodayData(dateValue?: string) {
       .eq("user_id", uid),
     supabase
       .from("meal_plan_templates")
-      .select("id,weekday,meal_slot,meal_time,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
+      .select("*")
       .eq("user_id", uid)
       .eq("is_active", true)
       .lte("active_from", endDate),
@@ -177,6 +177,9 @@ export async function getTodayData(dateValue?: string) {
     exerciseResult,
     mealTemplatesResult,
     mealTemplateSkipsResult,
+  );
+  const foodImageById = new Map(
+    rows(foodsResult.data).map((food: any) => [food.id, food.image_path]),
   );
   const plan = planResult.data;
   let planDays: any[] = [];
@@ -254,7 +257,10 @@ export async function getTodayData(dateValue?: string) {
     const key = format(dayDate, "yyyy-MM-dd");
     const dayMeals = rows(mealsResult.data).filter(
       (item: any) => item.entry_date === key,
-    );
+    ).map((item: any) => ({
+      ...item,
+      image_path: item.image_path ?? foodImageById.get(item.food_id) ?? null,
+    }));
     const weekday = (dayDate.getDay() + 6) % 7;
     const consumedTemplateIds = new Set(dayMeals.map((item: any) => item.source_template_id).filter(Boolean));
     const skippedTemplateIds = new Set(rows(mealTemplateSkipsResult.data).filter((skip: any) => skip.entry_date === key).map((skip: any) => skip.template_id));
@@ -383,7 +389,7 @@ export async function getNutritionData(dateValue?: string) {
       .maybeSingle(),
     supabase
       .from("meal_plan_templates")
-      .select("id,weekday,meal_slot,meal_time,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
+      .select("*")
       .eq("user_id", uid)
       .eq("is_active", true)
       .lte("active_from", date),
@@ -394,7 +400,13 @@ export async function getNutritionData(dateValue?: string) {
       .eq("entry_date", date),
   ]);
   checkQueries(entries, foods, targets, settings, recurring, skipped);
-  const savedEntries = rows(entries.data);
+  const foodImageById = new Map(
+    rows(foods.data).map((food: any) => [food.id, food.image_path]),
+  );
+  const savedEntries = rows(entries.data).map((item: any) => ({
+    ...item,
+    image_path: item.image_path ?? foodImageById.get(item.food_id) ?? null,
+  }));
   const weekday = (parseISO(date).getDay() + 6) % 7;
   const consumedTemplateIds = new Set(savedEntries.map((item: any) => item.source_template_id).filter(Boolean));
   const skippedTemplateIds = new Set(rows(skipped.data).map((item: any) => item.template_id));

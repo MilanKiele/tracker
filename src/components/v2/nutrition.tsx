@@ -30,6 +30,7 @@ import {
 import { eatMealTemplate, eatPlannedMeal, skipMealTemplate } from "@/app/ai-actions";
 import { PageHeading } from "@/components/app-shell";
 import { useAi } from "./ai-flow";
+import { EntityImageField, StorageImage } from "./entity-image";
 import {
   ActionButton,
   Empty,
@@ -338,6 +339,11 @@ export function NutritionPage({ data }: { data: any }) {
                 )
                 .map((f: any) => (
                   <div className="food-library-item" key={f.id}>
+                    {f.image_path ? (
+                      <StorageImage path={f.image_path} alt="" className="meal-photo" />
+                    ) : (
+                      <span className="meal-symbol"><Apple size={18} /></span>
+                    )}
                     <div>
                       <b>{f.name}</b>
                       <small>
@@ -384,6 +390,7 @@ export function NutritionPage({ data }: { data: any }) {
                                 100,
                           is_planned: false,
                           review_status: "approved",
+                          image_path: f.image_path ?? null,
                         })
                       }
                       message="Ganze Portion hinzugefügt."
@@ -449,9 +456,11 @@ export function MealRow({ meal, onEdit }: { meal: any; onEdit?: () => void }) {
         }));
       }}
     >
-      <span className="meal-symbol">
-        <Apple size={18} />
-      </span>
+      {meal.image_path ? (
+        <StorageImage path={meal.image_path} alt="" className="meal-photo" />
+      ) : (
+        <span className="meal-symbol"><Apple size={18} /></span>
+      )}
       <div className="meal-info">
         <b>{meal.name}</b>
         <small>
@@ -524,6 +533,7 @@ export function MealEditor({
 }) {
   const [selected, setSelected] = useState("");
   const [grams, setGrams] = useState(String(entry.amount_grams || 100));
+  const [imagePath, setImagePath] = useState<string | null>(entry.image_path ?? null);
   const [busy, setBusy] = useState(false);
   const { run } = useFeedback();
   const food = foods.find((f) => f.id === selected);
@@ -560,6 +570,7 @@ export function MealEditor({
             is_planned: f.get("planned") === "on",
             review_status: "approved",
             notes: entry.notes ?? null,
+            image_path: imagePath,
             fiber_g: food
               ? food.fiber_g == null
                 ? null
@@ -597,10 +608,11 @@ export function MealEditor({
               value={selected}
               onChange={(e) => {
                 setSelected(e.target.value);
+                const nextFood = foods.find((item) => item.id === e.target.value);
+                setImagePath(nextFood?.image_path ?? null);
                 setGrams(
                   String(
-                    foods.find((f) => f.id === e.target.value)?.serving_grams ||
-                      100,
+                    nextFood?.serving_grams || 100,
                   ),
                 );
               }}
@@ -614,6 +626,7 @@ export function MealEditor({
             </select>
           </label>
         )}
+        <EntityImageField path={imagePath} onChange={setImagePath} label="Bild zum Eintrag" />
         <div className="form-grid">
           <label>
             Datum
@@ -728,6 +741,7 @@ export function MealEditor({
 function FoodEditor({ food, onClose }: { food: any; onClose: () => void }) {
   const { run } = useFeedback();
   const [busy, setBusy] = useState(false);
+  const [imagePath, setImagePath] = useState<string | null>(food.image_path ?? null);
   return (
     <Modal
       title={food.id ? "Speise bearbeiten" : "Speise anlegen"}
@@ -751,6 +765,7 @@ function FoodEditor({ food, onClose }: { food: any; onClose: () => void }) {
             fiber_g: food.fiber_g ?? null,
             sugar_g: food.sugar_g ?? null,
             salt_g: food.salt_g ?? null,
+            image_path: imagePath,
           };
           const ok = await run(
             () => (food.id ? updateFood(food.id, data) : createFood(data)),
@@ -769,6 +784,7 @@ function FoodEditor({ food, onClose }: { food: any; onClose: () => void }) {
             maxLength={140}
           />
         </label>
+        <EntityImageField path={imagePath} onChange={setImagePath} label="Bild zur Speise" />
         <p className="muted">Nährwerte je 100 g.</p>
         <div className="form-grid">
           {[

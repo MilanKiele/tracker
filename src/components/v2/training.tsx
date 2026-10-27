@@ -42,6 +42,7 @@ import {
   useFeedback,
 } from "./ui";
 import { useAi } from "./ai-flow";
+import { EntityImageField, StorageImage } from "./entity-image";
 
 const weekdays = [
   "Montag",
@@ -109,6 +110,9 @@ export function TrainPage({ data }: { data: any }) {
                 </button>
               )}
             </div>
+            {plan?.image_path && (
+              <StorageImage path={plan.image_path} alt={`${plan.name}`} className="entity-cover" />
+            )}
             {data.plans.length > 0 && (
               <div className="plan-toolbar">
                 <select
@@ -153,7 +157,8 @@ export function TrainPage({ data }: { data: any }) {
                       <h3>{day.name}</h3>
                       <div className="exercise-pills">
                         {day.exercises.map((entry: any) => (
-                          <span key={entry.id}>
+                          <span key={entry.id} className="exercise-pill">
+                            {entry.exercise?.image_path && <StorageImage path={entry.exercise.image_path} alt="" className="exercise-thumb" />}
                             {entry.exercise?.name || "Übung"}
                           </span>
                         ))}
@@ -629,6 +634,7 @@ function PlanEditor({
   onClose: () => void;
 }) {
   const { run } = useFeedback();
+  const [imagePath, setImagePath] = useState<string | null>(plan.image_path ?? null);
   return (
     <Modal title="Plan bearbeiten" onClose={onClose} wide>
       <form
@@ -641,6 +647,7 @@ function PlanEditor({
               updatePlan(plan.id, {
                 name: String(f.get("name")),
                 description: String(f.get("description")),
+                image_path: imagePath,
               }),
             "Plan gespeichert.",
           );
@@ -663,6 +670,7 @@ function PlanEditor({
             maxLength={1000}
           />
         </label>
+        <EntityImageField path={imagePath} onChange={setImagePath} label="Bild zum Trainingsplan" />
         <button className="btn btn-primary">Speichern</button>
       </form>
       <div className="editor-days">
@@ -889,6 +897,7 @@ function PlanEditor({
 function ExerciseLibrary({ exercises }: { exercises: any[] }) {
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  const [imagePath, setImagePath] = useState<string | null>(null);
   const { run } = useFeedback();
   return (
     <>
@@ -907,6 +916,7 @@ function ExerciseLibrary({ exercises }: { exercises: any[] }) {
           )
           .map((e) => (
             <div key={e.id}>
+              {e.image_path && <StorageImage path={e.image_path} alt="" className="exercise-thumb" />}
               <b>{e.name}</b>
               <small>
                 {e.primary_muscle} · {e.equipment}
@@ -931,11 +941,14 @@ function ExerciseLibrary({ exercises }: { exercises: any[] }) {
                     primary_muscle: String(f.get("muscle")),
                     equipment: String(f.get("equipment")),
                     movement_type: "free_weight",
+                    image_path: imagePath,
                   }),
                 "Übung gespeichert.",
               )
-            )
+            ) {
               setAdding(false);
+              setImagePath(null);
+            }
           }}
         >
           <label>
@@ -950,6 +963,7 @@ function ExerciseLibrary({ exercises }: { exercises: any[] }) {
             Equipment
             <input name="equipment" required />
           </label>
+          <EntityImageField path={imagePath} onChange={setImagePath} label="Bild zur Übung" />
           <button className="btn btn-primary">Speichern</button>
         </form>
       )}

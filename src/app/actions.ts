@@ -16,6 +16,21 @@ const uuid = z.string().uuid();
 function value(form: FormData, key: string) {
   return String(form.get(key) ?? "");
 }
+function validateImagePath(path: string | null | undefined, userId: string) {
+  if (path && (!path.startsWith(`${userId}/`) || path.includes("..")))
+    throw new Error("Das Bild gehört nicht zu deinem Konto.");
+}
+function isMissingImageColumn(error: { code?: string } | null) {
+  return Boolean(error && ["42703", "PGRST204"].includes(error.code ?? ""));
+}
+async function removeReplacedImage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  previous: string | null | undefined,
+  next: string | null | undefined,
+) {
+  if (previous && previous !== next)
+    await supabase.storage.from("entity-images").remove([previous]);
+}
 async function ownedClient() {
   const supabase = await createClient();
   const {
@@ -208,6 +223,7 @@ const foodSchema = z.object({
   salt_g: z.number().min(0).max(1000).nullable().optional(),
   serving_grams: z.number().positive().max(5000).default(100),
   source: z.string().max(300).nullable().optional(),
+  image_path: z.string().max(240).nullable().optional(),
 });
 const mealSchema = z.object({
   entry_date: isoDate,
@@ -227,25 +243,39 @@ const mealSchema = z.object({
   is_planned: z.boolean(),
   review_status: z.enum(["pending", "approved", "denied"]).default("approved"),
   notes: z.string().max(2000).nullable().optional(),
+  image_path: z.string().max(240).nullable().optional(),
 });
 export async function createFood(input: unknown) {
   const food = foodSchema.parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(food.image_path, user.id);
+  const { image_path, ...foodValues } = food;
   const { error } = await supabase
     .from("foods")
-    .insert({ ...food, user_id: user.id });
+    .insert({ ...foodValues, ...(image_path ? { image_path } : {}), user_id: user.id });
   fail(error);
   revalidatePath("/nutrition");
 }
 export async function updateFood(id: string, input: unknown) {
   const food = foodSchema.parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(food.image_path, user.id);
+  const { data: previous, error: readError } = await supabase
+    .from("foods")
+    .select("image_path")
+    .eq("id", uuid.parse(id))
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (readError && !(isMissingImageColumn(readError) && !food.image_path)) fail(readError);
+  const { image_path, ...foodValues } = food;
+  const updateValues = readError ? foodValues : food;
   const { error } = await supabase
     .from("foods")
-    .update(food)
+    .update(updateValues)
     .eq("id", uuid.parse(id))
     .eq("user_id", user.id);
   fail(error);
+  if (!readError) await removeReplacedImage(supabase, previous?.image_path, food.image_path);
   revalidatePath("/nutrition");
 }
 export async function archiveFood(id: string) {
@@ -261,11 +291,13 @@ export async function archiveFood(id: string) {
 export async function createMeal(input: unknown) {
   const meal = mealSchema.parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(meal.image_path, user.id);
   await assertOwned(supabase, user.id, "foods", meal.food_id);
   await assertOwned(supabase, user.id, "recipes", meal.recipe_id);
+  const { image_path, ...mealValues } = meal;
   const { error } = await supabase
     .from("meal_entries")
-    .insert({ ...meal, user_id: user.id });
+    .insert({ ...mealValues, ...(image_path ? { image_path } : {}), user_id: user.id });
   fail(error);
   revalidatePath("/");
   revalidatePath("/nutrition");
@@ -274,14 +306,24 @@ export async function createMeal(input: unknown) {
 export async function updateMeal(id: string, input: unknown) {
   const meal = mealSchema.parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(meal.image_path, user.id);
   await assertOwned(supabase, user.id, "foods", meal.food_id);
   await assertOwned(supabase, user.id, "recipes", meal.recipe_id);
+  const { data: previous, error: readError } = await supabase
+    .from("meal_entries")
+    .select("image_path")
+    .eq("id", uuid.parse(id))
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (readError && !(isMissingImageColumn(readError) && !meal.image_path)) fail(readError);
+  const { image_path, ...mealValues } = meal;
   const { error } = await supabase
     .from("meal_entries")
-    .update(meal)
+    .update(readError ? mealValues : meal)
     .eq("id", uuid.parse(id))
     .eq("user_id", user.id);
   fail(error);
+  if (!readError) await removeReplacedImage(supabase, previous?.image_path, meal.image_path);
   revalidatePath("/");
   revalidatePath("/nutrition");
   revalidatePath("/insights");
@@ -393,13 +435,16 @@ export async function saveNutritionTargets(input: unknown) {
 const planSchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().max(1000).nullable().optional(),
+  image_path: z.string().max(240).nullable().optional(),
 });
 export async function createPlan(input: unknown) {
   const data = planSchema.parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(data.image_path, user.id);
+  const { image_path, ...planValues } = data;
   const { data: plan, error } = await supabase
     .from("training_plans")
-    .insert({ ...data, user_id: user.id })
+    .insert({ ...planValues, ...(image_path ? { image_path } : {}), user_id: user.id })
     .select("id")
     .single();
   fail(error);
@@ -409,12 +454,22 @@ export async function createPlan(input: unknown) {
 export async function updatePlan(id: string, input: unknown) {
   const data = planSchema.parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(data.image_path, user.id);
+  const { data: previous, error: readError } = await supabase
+    .from("training_plans")
+    .select("image_path")
+    .eq("id", uuid.parse(id))
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (readError && !(isMissingImageColumn(readError) && !data.image_path)) fail(readError);
+  const { image_path, ...planValues } = data;
   const { error } = await supabase
     .from("training_plans")
-    .update(data)
+    .update(readError ? planValues : data)
     .eq("id", uuid.parse(id))
     .eq("user_id", user.id);
   fail(error);
+  if (!readError) await removeReplacedImage(supabase, previous?.image_path, data.image_path);
   revalidatePath("/train");
 }
 export async function activatePlan(id: string) {
@@ -541,12 +596,15 @@ export async function createExercise(input: unknown) {
       equipment: z.string().min(1).max(60),
       movement_type: z.enum(["machine", "cable", "free_weight", "bodyweight"]),
       notes: z.string().max(1000).nullable().optional(),
+      image_path: z.string().max(240).nullable().optional(),
     })
     .parse(input);
   const { supabase, user } = await ownedClient();
+  validateImagePath(data.image_path, user.id);
+  const { image_path, ...exerciseValues } = data;
   const { error } = await supabase
     .from("exercises")
-    .insert({ ...data, user_id: user.id });
+    .insert({ ...exerciseValues, ...(image_path ? { image_path } : {}), user_id: user.id });
   fail(error);
   revalidatePath("/train");
 }
