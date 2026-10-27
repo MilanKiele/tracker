@@ -35,6 +35,7 @@ export const planDraft = z
   );
 export const foodDraft = z.object({
   name: z.string().trim().min(1).max(140),
+  meal_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   grams: z.number().min(1).max(5000),
   kcal: z.number().min(0).max(10000),
   protein_g: z.number().min(0).max(1000),
@@ -128,6 +129,7 @@ export const aiAction = z.discriminatedUnion("type", [
     name: z.string().trim().min(1).max(140).optional(),
     entry_date: dateSchema.optional(),
     meal_slot: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+    meal_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
     amount_grams: z.number().min(0).max(5000).nullable().optional(),
     kcal: z.number().min(0).max(10000).optional(),
     protein_g: z.number().min(0).max(1000).optional(),
@@ -140,6 +142,7 @@ export const aiAction = z.discriminatedUnion("type", [
     source_meal_id: z.string().uuid().optional(),
     weekday: z.number().int().min(0).max(6),
     meal_slot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+    meal_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
     name: z.string().trim().min(1).max(140).optional(),
     amount_grams: z.number().min(1).max(5000).optional(),
     kcal: z.number().min(0).max(10000).optional(),

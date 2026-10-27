@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { addDays, format, parseISO } from "date-fns";
 import {
   Apple,
@@ -21,6 +21,7 @@ import {
   archiveMeal,
   createFood,
   createMeal,
+  moveMealEntry,
   reviewMeal,
   saveNutritionTargets,
   updateFood,
@@ -171,6 +172,25 @@ export function NutritionPage({ data }: { data: any }) {
   const [food, setFood] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [targetOpen, setTargetOpen] = useState(false);
+  const [dragOverSlot, setDragOverSlot] = useState("");
+  const { run } = useFeedback();
+  async function dropMeal(event: DragEvent<HTMLDivElement>, slot: string) {
+    event.preventDefault();
+    setDragOverSlot("");
+    try {
+      const payload = JSON.parse(event.dataTransfer.getData("application/x-tracker-meal")) as {
+        id: string;
+        isTemplate: boolean;
+        mealTime: string | null;
+      };
+      await run(
+        () => moveMealEntry(payload.id, slot as "breakfast" | "lunch" | "dinner" | "snack", payload.isTemplate, payload.mealTime),
+        `Zu ${slots[slot as keyof typeof slots]} verschoben.`,
+      );
+    } catch {
+      // Ignore unrelated files or browser drag payloads.
+    }
+  }
   return (
     <>
       <PageHeading
@@ -216,12 +236,25 @@ export function NutritionPage({ data }: { data: any }) {
                 </button>
               }
             />
+            <small className="meal-drag-hint">Mahlzeiten ziehen, um sie Frühstück, Mittag oder Abend zuzuordnen · Uhrzeit im Bearbeiten-Dialog festlegen</small>
             {Object.entries(slots).map(([key, label]) => {
               const meals = entries.filter(
                 (e: any) => e.meal_slot === key && e.review_status !== "denied",
-              );
+              ).sort((a: any, b: any) => String(a.meal_time ?? "99:99").localeCompare(String(b.meal_time ?? "99:99")));
               return (
-                <div className="meal-group" key={key}>
+                <div
+                  className={`meal-group ${dragOverSlot === key ? "meal-group-drop-active" : ""}`}
+                  key={key}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverSlot(key);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverSlot("");
+                  }}
+                  onDrop={(event) => void dropMeal(event, key)}
+                >
                   <div className="meal-group-label">
                     <b>{label}</b>
                     <small>
@@ -404,7 +437,18 @@ export function NutritionPage({ data }: { data: any }) {
 }
 export function MealRow({ meal, onEdit }: { meal: any; onEdit?: () => void }) {
   return (
-    <div className="meal-row">
+    <div
+      className="meal-row"
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-tracker-meal", JSON.stringify({
+          id: meal.is_template ? meal.template_id : meal.id,
+          isTemplate: Boolean(meal.is_template),
+          mealTime: meal.meal_time?.slice(0, 5) ?? null,
+        }));
+      }}
+    >
       <span className="meal-symbol">
         <Apple size={18} />
       </span>
@@ -412,7 +456,7 @@ export function MealRow({ meal, onEdit }: { meal: any; onEdit?: () => void }) {
         <b>{meal.name}</b>
         <small>
           {meal.amount_grams ? `${fmt(meal.amount_grams)} g · ` : ""}
-          {meal.is_planned
+          {meal.meal_time ? `${meal.meal_time.slice(0, 5)} · ` : ""}{meal.is_planned
             ? "Geplant"
             : meal.review_status === "pending"
               ? "Zu prüfen"
@@ -497,6 +541,7 @@ export function MealEditor({
           const data = {
             entry_date: String(f.get("date")),
             meal_slot: String(f.get("slot")),
+            meal_time: String(f.get("meal_time")) || null,
             food_id: food?.id ?? entry.food_id ?? null,
             name: food?.name ?? String(f.get("name")),
             amount_grams: food ? Number(grams) : Number(f.get("grams")) || null,
@@ -588,6 +633,10 @@ export function MealEditor({
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            Uhrzeit
+            <input name="meal_time" type="time" defaultValue={entry.meal_time?.slice(0, 5) || "12:30"} />
           </label>
         </div>
         {food ? (

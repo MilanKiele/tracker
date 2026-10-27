@@ -78,6 +78,7 @@ type Message = { role: "user" | "assistant"; content: string; display: string };
 type Conversation = { id: string; title: string; mode: Mode; updated_at: string };
 type SavedPhoto = { id: string; label: string; created_at: string; url: string };
 type ChatNotification = { id: string; title: string; body: string; created_at: string; read_at: string | null };
+const mealTimeDefaults: Record<string, string> = { breakfast: "08:00", lunch: "12:30", snack: "15:00", dinner: "19:00" };
 export function AssistantWorkspace({
   initialMode,
   initialDate,
@@ -111,6 +112,8 @@ export function AssistantWorkspace({
   const localDate = useBrowserToday();
   const effectiveDate = date || localDate;
   const [slot, setSlot] = useState("lunch");
+  const [mealTime, setMealTime] = useState("12:30");
+  const [mealTimeEdited, setMealTimeEdited] = useState(false);
   const [destination, setDestination] = useState("diary");
   const [portions, setPortions] = useState<number[]>([]);
   const [included, setIncluded] = useState<boolean[]>([]);
@@ -324,6 +327,7 @@ export function AssistantWorkspace({
           foods,
           date: effectiveDate || today(),
           slot,
+          meal_time: mealTime,
           destination,
         });
         notify(
@@ -492,7 +496,10 @@ export function AssistantWorkspace({
                     Mahlzeit
                     <select
                       value={slot}
-                      onChange={(e) => setSlot(e.target.value)}
+                      onChange={(e) => {
+                        setSlot(e.target.value);
+                        if (!mealTimeEdited) setMealTime(mealTimeDefaults[e.target.value]);
+                      }}
                     >
                       {Object.entries(slots).map(([key, label]) => (
                         <option value={key} key={key}>
@@ -500,6 +507,17 @@ export function AssistantWorkspace({
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label>
+                    Uhrzeit
+                    <input
+                      type="time"
+                      value={mealTime}
+                      onChange={(e) => {
+                        setMealTime(e.target.value);
+                        setMealTimeEdited(true);
+                      }}
+                    />
                   </label>
                 </>
               )}

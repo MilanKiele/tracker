@@ -59,6 +59,7 @@ export async function importFood(input: unknown) {
       foods: z.array(foodDraft).min(1).max(12),
       date: dateSchema,
       slot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+      meal_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
       destination: z.enum(["diary", "calendar", "library"]),
     })
     .safeParse(input);
@@ -68,7 +69,7 @@ export async function importFood(input: unknown) {
   const db = await client();
   const result = await db.rpc("import_food_draft", {
     p_mutation_id: data.mutation_id,
-    p_foods: data.foods,
+    p_foods: data.foods.map((food) => ({ ...food, meal_time: data.meal_time ?? food.meal_time ?? null })),
     p_date: data.date,
     p_slot: data.slot,
     p_destination: data.destination,
@@ -210,7 +211,7 @@ export async function applyAiAction(input: unknown) {
     let source: Record<string, unknown> | null = null;
     if (action.template_id) {
       const { data, error } = await db.from("meal_plan_templates")
-        .select("name,amount_grams,kcal,protein_g,carbs_g,fat_g")
+        .select("name,amount_grams,meal_time,kcal,protein_g,carbs_g,fat_g")
         .eq("id", action.template_id).eq("user_id", user.id)
         .eq("is_active", true).maybeSingle();
       check(error);
@@ -219,7 +220,7 @@ export async function applyAiAction(input: unknown) {
     }
     if (action.source_meal_id) {
       const { data, error } = await db.from("meal_entries")
-        .select("name,amount_grams,kcal,protein_g,carbs_g,fat_g")
+        .select("name,amount_grams,meal_time,kcal,protein_g,carbs_g,fat_g")
         .eq("id", action.source_meal_id).eq("user_id", user.id)
         .is("archived_at", null).maybeSingle();
       check(error);
@@ -230,6 +231,7 @@ export async function applyAiAction(input: unknown) {
       user_id: user.id,
       weekday: action.weekday,
       meal_slot: action.meal_slot,
+      meal_time: action.meal_time ?? (source?.meal_time as string | null | undefined) ?? null,
       name: action.name ?? String(source?.name),
       amount_grams: action.amount_grams ?? Number(source?.amount_grams),
       kcal: action.kcal ?? Number(source?.kcal),
@@ -435,7 +437,7 @@ export async function eatMealTemplate(templateId: string, date: string) {
   const { data: { user } } = await db.auth.getUser();
   if (!user) throw new Error("Bitte erneut anmelden.");
   const { data: template, error: templateError } = await db.from("meal_plan_templates")
-    .select("id,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g")
+    .select("id,meal_slot,meal_time,name,amount_grams,kcal,protein_g,carbs_g,fat_g")
     .eq("id", parsedId).eq("user_id", user.id).eq("is_active", true).maybeSingle();
   check(templateError);
   if (!template) throw new Error("Die wiederkehrende Mahlzeit wurde nicht gefunden.");
@@ -454,6 +456,7 @@ export async function eatMealTemplate(templateId: string, date: string) {
       source_template_id: parsedId,
       entry_date: entryDate,
       meal_slot: template.meal_slot,
+      meal_time: template.meal_time,
       name: template.name,
       amount_grams: template.amount_grams,
       kcal: template.kcal,

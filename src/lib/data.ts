@@ -150,7 +150,7 @@ export async function getTodayData(dateValue?: string) {
       .eq("user_id", uid),
     supabase
       .from("meal_plan_templates")
-      .select("id,weekday,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
+      .select("id,weekday,meal_slot,meal_time,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
       .eq("user_id", uid)
       .eq("is_active", true)
       .lte("active_from", endDate),
@@ -378,7 +378,7 @@ export async function getNutritionData(dateValue?: string) {
       .maybeSingle(),
     supabase
       .from("meal_plan_templates")
-      .select("id,weekday,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
+      .select("id,weekday,meal_slot,meal_time,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
       .eq("user_id", uid)
       .eq("is_active", true)
       .lte("active_from", date),

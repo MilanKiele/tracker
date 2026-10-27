@@ -212,6 +212,7 @@ const foodSchema = z.object({
 const mealSchema = z.object({
   entry_date: isoDate,
   meal_slot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  meal_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   food_id: uuid.nullable().optional(),
   recipe_id: uuid.nullable().optional(),
   name: z.string().trim().min(1).max(140),
@@ -285,6 +286,25 @@ export async function updateMeal(id: string, input: unknown) {
   revalidatePath("/nutrition");
   revalidatePath("/insights");
 }
+export async function moveMealEntry(
+  id: string,
+  slot: "breakfast" | "lunch" | "dinner" | "snack",
+  isTemplate: boolean,
+  mealTime?: string | null,
+) {
+  const mealId = uuid.parse(id);
+  const mealSlot = z.enum(["breakfast", "lunch", "dinner", "snack"]).parse(slot);
+  const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional().parse(mealTime);
+  const { supabase, user } = await ownedClient();
+  const defaults = { breakfast: "08:00", lunch: "12:30", dinner: "19:00", snack: "15:00" };
+  const values = { meal_slot: mealSlot, meal_time: time ?? defaults[mealSlot] };
+  const { error } = isTemplate
+    ? await supabase.from("meal_plan_templates").update({ ...values, updated_at: new Date().toISOString() }).eq("id", mealId).eq("user_id", user.id)
+    : await supabase.from("meal_entries").update(values).eq("id", mealId).eq("user_id", user.id);
+  fail(error);
+  revalidatePath("/");
+  revalidatePath("/nutrition");
+}
 export async function reviewMeal(id: string, status: "approved" | "denied") {
   const { supabase, user } = await ownedClient();
   const { error } = await supabase
@@ -318,7 +338,7 @@ export async function copyMeals(
   const { data, error } = await supabase
     .from("meal_entries")
     .select(
-      "meal_slot,food_id,recipe_id,name,amount_grams,kcal,protein_g,carbs_g,fat_g,notes",
+      "meal_slot,meal_time,food_id,recipe_id,name,amount_grams,kcal,protein_g,carbs_g,fat_g,notes",
     )
     .eq("user_id", user.id)
     .eq("entry_date", from)

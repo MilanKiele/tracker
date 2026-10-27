@@ -1454,6 +1454,30 @@ label small {
 .meal-group {
   padding: 17px 0;
   border-top: 1px solid var(--line);
+  border-radius: 12px;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+.meal-group-drop-active {
+  background: var(--soft);
+  box-shadow: inset 0 0 0 2px #8ca77d;
+}
+.meal-drag-hint {
+  display: block;
+  margin: -7px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.meal-row[draggable="true"] {
+  cursor: grab;
+}
+.meal-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+.meal-row[draggable="true"]::after {
+  content: "↕";
+  color: #8b998b;
+  font-size: 12px;
+  margin-left: -5px;
 }
 .meal-group-label {
   display: flex;
