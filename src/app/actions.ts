@@ -2,10 +2,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from "zod";
 import { dateSchema } from "@/lib/ai/schema";
-import { differenceInYears, parseISO } from "date-fns";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { calculatedTargets } from "@/lib/nutrition-targets";
 
 const credentials = z.object({
   email: z.string().trim().email().max(254),
@@ -145,45 +145,6 @@ const profileSchema = z.object({
   goal: z.enum(["cut", "maintain", "bulk"]),
   unit_system: z.enum(["metric", "imperial"]),
 });
-function calculatedTargets(p: z.infer<typeof profileSchema>) {
-  const age = p.birth_date
-    ? Math.max(15, differenceInYears(new Date(), parseISO(p.birth_date)))
-    : 30;
-  const bmr =
-    10 * p.weight_kg +
-    6.25 * p.height_cm -
-    5 * age +
-    (p.sex === "male" ? 5 : p.sex === "female" ? -161 : -78);
-  const activity = {
-    sedentary: 1.2,
-    light: 1.375,
-    moderate: 1.55,
-    active: 1.725,
-    very_active: 1.9,
-  }[p.activity_level];
-  const adjustment = p.goal === "cut" ? -400 : p.goal === "bulk" ? 250 : 0;
-  const kcal = Math.max(
-    500,
-    Math.round((bmr * activity + adjustment) / 50) * 50,
-  );
-  const protein = Math.round(p.weight_kg * 1.8);
-  const fat = Math.round(p.weight_kg * 0.8);
-  const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
-  return {
-    kcal,
-    protein_g: protein,
-    fat_g: fat,
-    carbs_g: carbs,
-    calculation: {
-      formula: "Mifflin–St Jeor BMR × activity factor, adjusted by goal",
-      bmr: Math.round(bmr),
-      activity_factor: activity,
-      goal_adjustment: adjustment,
-      protein_g_per_kg: 1.8,
-      fat_g_per_kg: 0.8,
-    },
-  };
-}
 export async function saveProfile(input: unknown) {
   const p = profileSchema.parse(input);
   const { supabase, user } = await ownedClient();

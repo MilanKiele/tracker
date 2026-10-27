@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   Camera,
   Check,
-  History,
   Images,
   ImagePlus,
   LoaderCircle,
@@ -16,14 +15,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { importFood, importPlan } from "@/app/ai-actions";
+import { applyAiAction, importFood, importPlan } from "@/app/ai-actions";
 import {
   scaleFood,
   type AiResult,
   type FoodDraft,
   type PlanDraft,
 } from "@/lib/ai/schema";
-import { fmt, Modal, slots, today, useFeedback } from "./ui";
+import { fmt, slots, useFeedback } from "./ui";
 
 type Mode = "plan" | "food";
 const AiContext = createContext<{
@@ -31,27 +30,15 @@ const AiContext = createContext<{
 }>({ openAi: () => {} });
 export const useAi = () => useContext(AiContext);
 export function AiProvider({ children }: { children: React.ReactNode }) {
-  const [flow, setFlow] = useState<{
-    mode: Mode;
-    date: string;
-    key: number;
-  } | null>(null);
+  const router = useRouter();
   return (
     <AiContext
       value={{
         openAi: (mode, date) =>
-          setFlow({ mode, date: date || today(), key: Date.now() }),
+          router.push(`/assistant?mode=${mode}${date ? `&date=${date}` : ""}`),
       }}
     >
       {children}
-      {flow && (
-        <AiDialog
-          key={flow.key}
-          mode={flow.mode}
-          initialDate={flow.date}
-          onClose={() => setFlow(null)}
-        />
-      )}
     </AiContext>
   );
 }
@@ -89,20 +76,20 @@ export async function resizePhoto(file: File): Promise<string> {
 type Message = { role: "user" | "assistant"; content: string; display: string };
 type Conversation = { id: string; title: string; mode: Mode; updated_at: string };
 type SavedPhoto = { id: string; label: string; created_at: string; url: string };
-function AiDialog({
-  mode,
+type ChatNotification = { id: string; title: string; body: string; created_at: string; read_at: string | null };
+export function AssistantWorkspace({
+  initialMode,
   initialDate,
-  onClose,
 }: {
-  mode: Mode;
+  initialMode: Mode;
   initialDate: string;
-  onClose: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [activeMode, setActiveMode] = useState(mode);
+  const [activeMode, setActiveMode] = useState(initialMode);
   const [conversationId, setConversationId] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [showConversations, setShowConversations] = useState(true);
+  const [notifications, setNotifications] = useState<ChatNotification[]>([]);
+  const [notificationSettings, setNotificationSettings] = useState<Record<string, unknown> | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [savedPhotos, setSavedPhotos] = useState<SavedPhoto[]>([]);
   const [photosLoaded, setPhotosLoaded] = useState(false);
@@ -135,6 +122,8 @@ function AiDialog({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Verläufe nicht verfügbar.");
       setConversations(data.conversations ?? []);
+      setNotifications(data.notifications ?? []);
+      setNotificationSettings(data.settings ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Verläufe nicht verfügbar.");
     } finally {
@@ -150,8 +139,7 @@ function AiDialog({
     setResult(null);
     setImage("");
     setError("");
-    setActiveMode(mode);
-    setShowConversations(false);
+    setActiveMode(initialMode);
   }
   async function openConversation(conversation: Conversation) {
     setLoadingConversations(true);
@@ -171,7 +159,6 @@ function AiDialog({
       }));
       setResult(null);
       setImage("");
-      setShowConversations(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gespräch konnte nicht geladen werden.");
     } finally {
@@ -259,6 +246,7 @@ function AiDialog({
         body: JSON.stringify({
           mode: activeMode,
           conversation_id: conversationId || undefined,
+          context_date: date,
           messages: history
             .slice(-10)
             .map(({ role, content }) => ({ role, content })),
@@ -310,12 +298,11 @@ function AiDialog({
     setError("");
     try {
       if (result.kind === "plan") {
-        const savedPlan = await importPlan({
+        await importPlan({
           mutation_id: mutation.current,
           plan: result.plan,
         });
-        notify("Plan gespeichert. Du kannst direkt starten.");
-        router.push(`/train?plan=${savedPlan.plan_id}`);
+        notify("Plan gespeichert. Du kannst ihn unter Training öffnen.");
       }
       if (result.kind === "food") {
         const foods = result.foods
@@ -342,8 +329,12 @@ function AiDialog({
               : "Zu deinem Tagesbedarf hinzugefügt.",
         );
       }
-      if (result.kind === "food") router.refresh();
-      onClose();
+      if (result.kind === "action") {
+        await applyAiAction(result.action);
+        notify("Änderung übernommen.");
+      }
+      setResult(null);
+      router.refresh();
     } catch (e) {
       setError(
         e instanceof Error && e.name === "ZodError"
@@ -357,56 +348,53 @@ function AiDialog({
     }
   }
   return (
-    <Modal
-      title={activeMode === "plan" ? "Trainingscoach" : "Ernährungscoach"}
-      onClose={onClose}
-      wide
-    >
-      <div className="ai-intro">
-        <span className="ai-mark">
-          <Sparkles size={22} />
-        </span>
-        <p>
-          {activeMode === "plan"
-            ? "Sag, wie du trainieren möchtest."
-            : "Foto aufnehmen oder deine Mahlzeit beschreiben."}
-        </p>
-      </div>
-      <div className="chat-tools">
-        <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowConversations(!showConversations)}>
-          <History size={15} /> Gespräche {conversations.length ? `· ${conversations.length}` : ""}
+    <div className="assistant-workspace">
+      <aside className="assistant-chat-sidebar">
+        <div className="assistant-chat-sidebar-head">
+          <b>Deine Chats</b>
+          <button type="button" className="icon-btn" aria-label="Neuer Chat" onClick={startNewConversation}>
+            <Plus size={17} />
+          </button>
+        </div>
+        <button type="button" className="btn btn-secondary full assistant-new-chat" onClick={startNewConversation}>
+          <Plus size={16} /> Neuer Chat
         </button>
-        <button type="button" className="btn btn-secondary btn-small" onClick={startNewConversation}>
-          <Plus size={15} /> Neuer Chat
-        </button>
-      </div>
-      {showConversations && (
-        <section className="conversation-list" aria-label="Frühere Gespräche">
-          <b>Letzte Gespräche</b>
-          {loadingConversations && <small>Wird geladen …</small>}
-          {!loadingConversations && !conversations.length && <small>Noch keine gespeicherten Gespräche.</small>}
+        <div className="assistant-chat-list" aria-label="Gespeicherte Gespräche">
+          {loadingConversations && <small>Chats werden geladen …</small>}
+          {!loadingConversations && !conversations.length && <small>Noch keine Chats. Starte dein erstes Gespräch.</small>}
           {conversations.map((conversation) => (
-            <button type="button" key={conversation.id} className="conversation-item" onClick={() => void openConversation(conversation)}>
+            <button type="button" key={conversation.id} className={`assistant-chat-item ${conversationId === conversation.id ? "active" : ""}`} onClick={() => void openConversation(conversation)}>
               <MessagesSquare size={15} />
-              <span><b>{conversation.title}</b><small>{conversation.mode === "plan" ? "Training" : "Ernährung"} · {new Date(conversation.updated_at).toLocaleDateString("de-DE")}</small></span>
+              <span><b>{conversation.title}</b><small>{conversation.mode === "plan" ? "Training" : "Everwell"} · {new Date(conversation.updated_at).toLocaleDateString("de-DE")}</small></span>
             </button>
           ))}
+        </div>
+      </aside>
+      <section className="assistant-thread">
+        <header className="assistant-thread-head">
+          <div><span className="ai-mark"><Sparkles size={18} /></span><span><b>Everwell Assistent</b><small>Dein Training, Essen und Körper in einem Chat</small></span></div>
+        </header>
+        <div className="assistant-thread-body">
+      {!!notifications.length && (
+        <section className="chat-notifications" aria-label="Benachrichtigungen">
+          <div><b>Benachrichtigungen</b><small>{notifications.filter((n) => !n.read_at).length} ungelesen</small></div>
+          {notifications.slice(0, 4).map((item) => (
+            <button key={item.id} className={item.read_at ? "read" : "unread"} onClick={() => setQuestion(`Markiere die Benachrichtigung mit ID ${item.id} als gelesen.`)}>
+              <b>{item.title}</b><span>{item.body}</span>
+            </button>
+          ))}
+          <small>Push {notificationSettings?.push_enabled ? "aktiviert" : "nicht aktiviert"} · Erinnerungen {notificationSettings?.reminder_enabled ? "an" : "aus"}</small>
         </section>
       )}
       {messages.length === 0 && (
         <div className="prompt-chips">
-          {(activeMode === "plan"
-            ? [
-                "3 Tage Ganzkörper im Gym",
-                "20 Minuten zu Hause, ohne Geräte",
-                "4 Tage Oberkörper / Unterkörper",
-              ]
-            : [
-                "Ein Chicken Wrap",
-                "200 g Skyr mit einer Banane",
-                "Eine vegetarische Bowl",
-              ]
-          ).map((text) => (
+          {[
+            "Was steht heute an?",
+            "Erstelle einen Trainingsplan für 3 Tage",
+            "Trage mein Gewicht von heute ein",
+            "Füge mein Mittagessen hinzu",
+            "Wie läuft meine Woche?",
+          ].map((text) => (
             <button key={text} onClick={() => setQuestion(text)}>
               {text}
             </button>
@@ -461,6 +449,12 @@ function AiDialog({
               }
             />
           ))}
+        </div>
+      )}
+      {result?.kind === "action" && (
+        <div className="action-proposal">
+          <b>Vorschlag zur Bestätigung</b>
+          <pre>{JSON.stringify(result.action, null, 2)}</pre>
         </div>
       )}
       {result && result.kind !== "message" && (
@@ -570,8 +564,7 @@ function AiDialog({
             </button>
           </div>
         )}
-        {activeMode === "food" && (
-          <>
+        <>
             <input
               ref={cameraRef}
               type="file"
@@ -657,15 +650,12 @@ function AiDialog({
                 </div>
               </section>
             )}
-          </>
-        )}
+        </>
         <div className="composer-input">
           <textarea
             aria-label="Nachricht an KI"
             placeholder={
-              activeMode === "plan"
-                ? "Ziel, Trainingstage, Equipment …"
-                : "Was und wie viel? Optional: nur die Hälfte …"
+              "Was möchtest du heute ändern oder hinzufügen?"
             }
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -689,7 +679,9 @@ function AiDialog({
           werden zur Analyse an OpenRouter gesendet.
         </small>
       </form>
-    </Modal>
+        </div>
+      </section>
+    </div>
   );
 }
 function PlanPreview({

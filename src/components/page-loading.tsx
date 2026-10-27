@@ -3,6 +3,7 @@ import Link from "next/link";
 
 const pages = [
   ["/", "Heute"],
+  ["/assistant", "Chat"],
   ["/train", "Training"],
   ["/nutrition", "Essen"],
   ["/body", "Körper"],

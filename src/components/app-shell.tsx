@@ -11,6 +11,7 @@ import {
   Dumbbell,
   Leaf,
   LogOut,
+  MessageSquareText,
   Sparkles,
   UserRound,
   Weight,
@@ -21,6 +22,7 @@ import { AiProvider, useAi } from "@/components/v2/ai-flow";
 
 const nav = [
   { href: "/", label: "Heute", icon: CalendarDays },
+  { href: "/assistant", label: "Chat", icon: MessageSquareText },
   { href: "/train", label: "Training", icon: Dumbbell },
   { href: "/nutrition", label: "Essen", icon: Apple },
   { href: "/body", label: "Körper", icon: Weight },
@@ -89,16 +91,6 @@ function Shell({
             </Link>
           ))}
         </nav>
-        <button
-          className="sidebar-ai"
-          onClick={() => openAi(path === "/train" ? "plan" : "food")}
-        >
-          <span>
-            <Sparkles size={19} /> Dein KI-Assistent
-          </span>
-          <small>Beschreiben. Anpassen. Loslegen.</small>
-          <ChevronRight size={16} />
-        </button>
         <div className="sidebar-bottom">
           <Link href="/account" className="account-link">
             <span className="avatar">{initials}</span>
