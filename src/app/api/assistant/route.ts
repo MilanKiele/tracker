@@ -89,9 +89,22 @@ function reply(error: string, status: number) {
   );
 }
 
-function databaseUpgrade() {
+function databaseUpgrade(error?: { code?: string }) {
+  const code = error?.code;
+  let message = "KI-Verläufe konnten nicht geladen werden. Supabase-Fehler";
+  if (code === "42P01" || code === "PGRST205") {
+    message = "Die Chat-Tabellen fehlen im Supabase-Projekt dieser App. Führe die vollständige supabase/setup.sql im SQL Editor desselben Projekts aus, auf das NEXT_PUBLIC_SUPABASE_URL zeigt.";
+  } else if (code === "42501") {
+    message = "Supabase hat den Zugriff auf Chat-Daten verweigert. Prüfe die RLS-Policies und Rechte aus supabase/setup.sql im Projekt dieser App.";
+  } else if (code === "42703") {
+    message = "Das Supabase-Schema für Chats ist unvollständig. Führe die vollständige supabase/setup.sql im Projekt dieser App aus.";
+  } else if (code === "PGRST202" || code === "42883") {
+    message = "Die KI-Funktion fehlt in Supabase. Führe die vollständige supabase/setup.sql im Projekt dieser App aus und lade danach das Schema neu.";
+  } else if (code) {
+    message = `Supabase konnte Chat-Daten nicht laden (Fehlercode ${code}). Prüfe, ob Setup und App dasselbe Supabase-Projekt verwenden.`;
+  }
   return reply(
-    "KI-Verläufe brauchen das aktuelle Supabase-Setup. Bitte supabase/setup.sql im SQL Editor ausführen.",
+    message,
     503,
   );
 }
@@ -110,7 +123,7 @@ export async function GET(request: Request) {
       .eq("id", conversationId)
       .eq("user_id", user.id)
       .maybeSingle();
-    if (conversationError) return databaseUpgrade();
+    if (conversationError) return databaseUpgrade(conversationError);
     if (!conversation) return reply("Gespräch nicht gefunden.", 404);
     const { data: messages, error } = await db
       .from("ai_messages")
@@ -118,7 +131,7 @@ export async function GET(request: Request) {
       .eq("conversation_id", conversationId)
       .eq("user_id", user.id)
       .order("created_at");
-    if (error) return databaseUpgrade();
+    if (error) return databaseUpgrade(error);
     return Response.json({ conversation, messages }, { headers: { "Cache-Control": "no-store" } });
   }
   const { data: conversations, error } = await db
@@ -127,12 +140,12 @@ export async function GET(request: Request) {
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .limit(40);
-  if (error) return databaseUpgrade();
+  if (error) return databaseUpgrade(error);
   const [{ data: notifications, error: notificationsError }, { data: settings }] = await Promise.all([
     db.from("notification_events").select("id,title,body,url,created_at,read_at,sent_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(12),
     db.from("notification_settings").select("push_enabled,missed_workout_enabled,reminder_enabled,reminder_time,timezone,quiet_hours_start,quiet_hours_end").eq("user_id", user.id).maybeSingle(),
   ]);
-  if (notificationsError) return databaseUpgrade();
+  if (notificationsError) return databaseUpgrade(notificationsError);
   return Response.json({ conversations, notifications, settings }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -181,7 +194,7 @@ export async function POST(request: Request) {
     .select("id")
     .eq("user_id", user.id)
     .limit(1);
-  if (conversationsError) return databaseUpgrade();
+  if (conversationsError) return databaseUpgrade(conversationsError);
   if (conversationId) {
     const { data: conversation, error } = await db
       .from("ai_conversations")
@@ -189,7 +202,7 @@ export async function POST(request: Request) {
       .eq("id", conversationId)
       .eq("user_id", user.id)
       .maybeSingle();
-    if (error) return databaseUpgrade();
+    if (error) return databaseUpgrade(error);
     if (!conversation) return reply("Gespräch nicht gefunden.", 404);
   }
   const model = process.env.OPENROUTER_MODEL || "openrouter/free";
@@ -197,10 +210,7 @@ export async function POST(request: Request) {
     return reply("Bitte ein kostenloses OpenRouter-Modell konfigurieren.", 503);
   const quota = await db.rpc("claim_ai_request", {});
   if (quota.error)
-    return reply(
-      "Datenbank-Update erforderlich: supabase/setup.sql im Supabase SQL Editor ausführen.",
-      503,
-    );
+    return databaseUpgrade(quota.error);
   if (!quota.data)
     return reply(
       "KI-Pause: Bitte kurz warten. Bei erreichtem Tageslimit geht es morgen weiter.",
@@ -303,7 +313,7 @@ export async function POST(request: Request) {
         })
         .select("id")
         .single();
-      if (error || !created) return databaseUpgrade();
+      if (error || !created) return databaseUpgrade(error ?? undefined);
       savedConversationId = created.id;
     }
     const timestamp = Date.now();
@@ -311,13 +321,13 @@ export async function POST(request: Request) {
       { user_id: user.id, conversation_id: savedConversationId, role: "user", content: lastMessage.content, created_at: new Date(timestamp).toISOString() },
       { user_id: user.id, conversation_id: savedConversationId, role: "assistant", content: JSON.stringify(parsed.data), created_at: new Date(timestamp + 1).toISOString() },
     ]);
-    if (saveError) return databaseUpgrade();
+    if (saveError) return databaseUpgrade(saveError);
     const { error: updateError } = await db
       .from("ai_conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", savedConversationId)
       .eq("user_id", user.id);
-    if (updateError) return databaseUpgrade();
+    if (updateError) return databaseUpgrade(updateError);
     return Response.json(
       { result: parsed.data, model: data.model ?? model, conversation_id: savedConversationId },
       { headers: { "Cache-Control": "no-store" } },
