@@ -37,8 +37,9 @@ export async function GET(request: Request) {
     const { data: subscriptions } = await supabase.from("push_subscriptions").select("id,endpoint,p256dh,auth_secret").eq("user_id", settings.user_id);
     if (!subscriptions?.length) { skipped++; continue; }
     const payloads: Array<{ key: string; title: string; body: string }> = [];
-    const reminderHour = Number(String(settings.reminder_time).slice(0, 2));
-    if (settings.reminder_enabled && (Number(parts.hour) === reminderHour || Number(parts.hour) === (reminderHour + 1) % 24)) {
+    // Hobby runs one cron per day, so send each enabled daily reminder on that
+    // run; reminder_time is a preference for a per-user scheduler on Pro.
+    if (settings.reminder_enabled) {
       payloads.push({ key: `daily:${localToday}`, title: "Your Everwell check-in", body: "Take a moment to log today’s food, training, or how you feel." });
     }
     if (settings.missed_workout_enabled) {

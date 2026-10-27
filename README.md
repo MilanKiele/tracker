@@ -20,7 +20,7 @@ The app is a PWA: it has a web manifest, install icons, an offline fallback, a s
 1. Generate a VAPID key pair using `npx web-push generate-vapid-keys`.
 2. Set `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and `VAPID_PUBLIC_KEY` to the public key, `VAPID_PRIVATE_KEY` to the private key, and `VAPID_SUBJECT` to a `mailto:` contact. Only the `NEXT_PUBLIC_` public key goes to the browser.
 3. Set a random `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel. The service-role key is used only by the scheduled reminder route; it bypasses RLS and must remain secret.
-4. The included Vercel Cron calls `/api/notifications/reminders` hourly in production. It sends opted-in daily check-ins and missed planned-workout reminders in each account's timezone, respects quiet hours, and records notification history. Vercel Cron runs on production deployments; preview/local environments do not run the schedule automatically.
+4. The included Vercel Cron calls `/api/notifications/reminders` once per day at 07:00 UTC in production. It sends opted-in daily check-ins and missed planned-workout reminders, respects quiet hours, and records notification history. On Hobby, Vercel may invoke the job within the scheduled hour (±59 minutes); the saved per-user reminder time is a preference but cannot be honored exactly with one daily run. Use Pro or an external scheduler for more frequent or precise per-user delivery. Cron runs on production deployments; preview/local environments do not run the schedule automatically.
 5. Users must install the app where required by their mobile browser, grant notification permission, and enable reminders in **Account → Push notifications**. Browser and operating-system notification settings can still block delivery.
 
 ## What is stored
