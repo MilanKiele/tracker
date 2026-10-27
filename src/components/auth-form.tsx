@@ -1,9 +1,161 @@
 "use client";
+
 import Link from "next/link";
 import { useState } from "react";
-import { Leaf, Eye, EyeOff, ArrowRight, Check } from "lucide-react";
+import { useFormStatus } from "react-dom";
+import { ArrowRight, Eye, EyeOff, Leaf, LoaderCircle } from "lucide-react";
 import { login, register, requestPasswordReset } from "@/app/actions";
-export function AuthForm({mode,error,message}:{mode:"login"|"register"|"reset";error?:string;message?:string}){
- const [show,setShow]=useState(false);const configured=Boolean((process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.SUPABASE_URL)&&(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY));const action=mode==="login"?login:mode==="register"?register:requestPasswordReset;
- return <main className="auth-page"><div className="auth-card"><Link href="/" className="brand auth-brand"><span className="brand-mark"><Leaf size={19}/></span><span>everwell<span className="brand-dot">.</span></span></Link><div className="auth-intro"><div className="eyebrow">A CALMER WAY TO TRACK</div><h1>{mode==="login"?"Welcome back.":mode==="register"?"Your space starts here.":"Let’s get you back in."}</h1><p>{mode==="login"?"Pick up where you left off. Your progress is waiting.":mode==="register"?"A little space for strength, nourishment and the things that matter to you.":"Enter your email and we’ll send a secure reset link."}</p></div>{!configured&&<div className="auth-setup">Connect Supabase URL and publishable key in <code>.env.local</code> to enable account access.</div>}{message&&<div className="auth-message"><Check size={15}/>{message}</div>}{error&&<div className="auth-error">{error}</div>}<form action={action} className="auth-form">{mode==="register"&&<label>Your name<input type="text" name="name" required minLength={2} maxLength={80} autoComplete="name" placeholder="Jamie Parker"/></label>}<label>Email address<input type="email" name="email" required autoComplete="email" placeholder="you@example.com"/></label>{mode!=="reset"&&<label>Password<div className="password-field"><input type={show?"text":"password"} name="password" required minLength={8} maxLength={128} autoComplete={mode==="login"?"current-password":"new-password"} placeholder="At least 8 characters"/><button type="button" onClick={()=>setShow(!show)} aria-label={show?"Hide password":"Show password"}>{show?<EyeOff size={16}/>:<Eye size={16}/>}</button></div></label>}{mode==="login"&&<div className="auth-forgot"><Link href="/forgot-password">Forgot password?</Link></div>}<button className="button button-primary auth-submit" disabled={!configured}>{mode==="login"?"Sign in":mode==="register"?"Create your account":"Send reset link"}<ArrowRight size={15}/></button></form><div className="auth-switch">{mode==="login"?<>New to Everwell? <Link href="/register">Create an account</Link></>:mode==="register"?<>Already have an account? <Link href="/login">Sign in</Link></>:<>Remembered it? <Link href="/login">Back to sign in</Link></>}</div><div className="auth-privacy"><span><Check size={12}/> Private by design</span><span>Every account is its own space</span></div></div><div className="auth-side-note">“Taking care of yourself is a practice, not a finish line.”</div></main>
+
+export function AuthForm({
+  mode,
+  error,
+  message,
+}: {
+  mode: "login" | "register" | "reset";
+  error?: string;
+  message?: string;
+}) {
+  const [show, setShow] = useState(false);
+  const configured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+  );
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <Link href="/" className="brand auth-brand">
+          <span className="brand-mark">
+            <Leaf size={21} />
+          </span>
+          everwell.
+        </Link>
+        <div className="auth-intro">
+          <span className="eyebrow">DEIN ALLTAG. DEIN RHYTHMUS.</span>
+          <h1>
+            {mode === "login"
+              ? "Schön, dass du da bist."
+              : mode === "register"
+                ? "Dein neuer Start."
+                : "Wieder reinkommen."}
+          </h1>
+          <p>
+            {mode === "reset"
+              ? "Wir senden dir einen Link zum Zurücksetzen."
+              : "Training, Ernährung und Fortschritt. An einem Ort."}
+          </p>
+        </div>
+        {!configured && (
+          <div className="auth-setup">
+            Supabase ist noch nicht verbunden. Projekt-URL und öffentlichen
+            Schlüssel in der Umgebung hinterlegen.
+          </div>
+        )}
+        {error && (
+          <div className="auth-error" role="alert">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="auth-message" role="status">
+            {message}
+          </div>
+        )}
+        <form
+          className="auth-form"
+          action={
+            mode === "login"
+              ? login
+              : mode === "register"
+                ? register
+                : requestPasswordReset
+          }
+        >
+          {mode === "register" && (
+            <label>
+              Name
+              <input
+                name="name"
+                autoComplete="name"
+                minLength={2}
+                maxLength={80}
+                required
+              />
+            </label>
+          )}
+          <label>
+            E-Mail
+            <input name="email" type="email" autoComplete="email" required />
+          </label>
+          {mode !== "reset" && (
+            <label>
+              Passwort
+              <div className="password-field">
+                <input
+                  name="password"
+                  type={show ? "text" : "password"}
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                  required
+                />
+                <button
+                  type="button"
+                  aria-label={show ? "Passwort verbergen" : "Passwort anzeigen"}
+                  onClick={() => setShow(!show)}
+                >
+                  {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+            </label>
+          )}
+          {mode === "login" && (
+            <Link href="/forgot-password" className="auth-forgot">
+              Passwort vergessen?
+            </Link>
+          )}
+          <AuthSubmit disabled={!configured}>
+            {mode === "login"
+              ? "Anmelden"
+              : mode === "register"
+                ? "Konto erstellen"
+                : "Link senden"}
+          </AuthSubmit>
+        </form>
+        <div className="auth-switch">
+          {mode === "login" ? (
+            <>
+              Noch kein Konto? <Link href="/register">Registrieren</Link>
+            </>
+          ) : (
+            <Link href="/login">Zur Anmeldung</Link>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+function AuthSubmit({
+  disabled,
+  children,
+}: {
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      className="btn btn-primary auth-submit"
+      disabled={disabled || pending}
+    >
+      {pending ? (
+        <LoaderCircle size={17} className="spin" />
+      ) : (
+        <ArrowRight size={17} />
+      )}{" "}
+      {children}
+    </button>
+  );
 }

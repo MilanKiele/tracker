@@ -1,41 +1,49 @@
-# Everwell
+# Everwell · Tracker
 
-A private, mobile-friendly wellness tracker built with Next.js 16, Supabase Auth and Postgres. The Today, Train, Nutrition, Body, Insights, and Account pages read the signed-in user's own records. New accounts start with empty libraries and history; the app does not populate example meals, workouts, or measurements.
+Minimaler Wellness-Tracker mit Next.js 16, Supabase und OpenRouter. Overview, Train, Nutrition, Body und Insights lesen ausschließlich Daten des angemeldeten Kontos. Die Oberfläche ist neu aufgebaut; Git-Verlauf, Supabase-Projekt und vorhandene Aufzeichnungen werden weiterverwendet.
 
-## Local setup
+## Bestehendes Projekt aktualisieren
 
-1. Install Node.js dependencies with `npm install`.
-2. Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_ANON_KEY` (a Supabase publishable key also works as `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`). These are the browser-safe Auth credentials. Never put a service-role key in a `NEXT_PUBLIC_` variable.
-3. Apply every SQL migration in `supabase/migrations/` in order, from the Supabase SQL Editor or with the Supabase CLI (`supabase link` then `supabase db push`). Migrations create the per-user schema and RLS policies, review/notification tables, and disable the old signup template seeder. Migration 003 removes untouched default plans and unused sample food/exercise catalog rows while preserving diary and workout history.
-4. Start the app with `npm run dev` and open `http://localhost:3000`.
+1. Im **vorhandenen Supabase-Projekt** nur die neue Datei [Migration 004](supabase/migrations/202610270004_ai_native.sql) im SQL Editor ausführen oder mit der bereits verbundenen Supabase CLI `supabase db push` nutzen. Bereits angewandte Migrationen 001–003 nicht nochmals ausführen.
+2. Die bisherigen Supabase- und Push-Variablen in Vercel beibehalten. Für Chat und Fotos zusätzlich den **serverseitigen** `OPENROUTER_API_KEY` setzen. `OPENROUTER_MODEL=openrouter/free` ist der Standard. `SITE_URL` in Produktion auf `https://tracker-jet-one.vercel.app` setzen.
+3. Neu deployen. `AI_ALLOWED_EMAILS` kann den KI-Zugriff auf bestimmte Konto-Adressen begrenzen (Komma-getrennt). Ohne Liste dürfen alle angemeldeten Konten die KI nutzen.
 
-## Vercel and Supabase
+004 ergänzt nur Tabellen, Funktionen und Spalten. Es löscht keine bestehenden Konten, Pläne, Mahlzeiten oder Messungen. Die Funktionen für Importe, Planaktivierung und Trainingsabschluss laufen als Transaktion. Eine Import-ID schützt Wiederholungen vor Duplikaten. Alle Daten bleiben dem angemeldeten Konto zugeordnet; RPC-Funktionen prüfen `auth.uid()` und nutzen RLS.
 
-Set the same `NEXT_PUBLIC_SUPABASE_URL` and either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel's Production, Preview, and Development environments, then redeploy. If the Vercel project is linked locally, `vercel env pull .env.local` can sync configured variables. Keep Supabase's service-role key server-only; the regular app and user actions run with the user's authenticated session and RLS.
+Die ursprüngliche Version wurde lokal vor dem Umbau nach `/home/enderman/Projects/tracker.backup` kopiert, inklusive Git und lokalen Einstellungen. Nur neu erzeugbare `node_modules`, `.next` und `.turbo` wurden ausgelassen. Das Backup ist kein Datenbank-Export; vorhandene Supabase-Daten bleiben im bisherigen Projekt.
 
-## Push reminders
+## Lokal starten
 
-The app is a PWA: it has a web manifest, install icons, an offline fallback, a service worker, and a mobile install prompt. Push reminders require a secure origin (HTTPS in production; localhost is allowed during development), the SQL migrations, and VAPID keys.
+Node.js 22.18 oder neuer verwenden. `npm ci`, `.env.example` nach `.env.local` kopieren und die **bisherige** Supabase-URL sowie den öffentlichen Anon-/Publishable-Key einsetzen. Danach `npm run dev`.
 
-1. Generate a VAPID key pair using `npx web-push generate-vapid-keys`.
-2. Set `NEXT_PUBLIC_VAPID_PUBLIC_KEY` and `VAPID_PUBLIC_KEY` to the public key, `VAPID_PRIVATE_KEY` to the private key, and `VAPID_SUBJECT` to a `mailto:` contact. Only the `NEXT_PUBLIC_` public key goes to the browser.
-3. Set a random `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel. The service-role key is used only by the scheduled reminder route; it bypasses RLS and must remain secret.
-4. The included Vercel Cron calls `/api/notifications/reminders` once per day at 07:00 UTC in production. It sends opted-in daily check-ins and missed planned-workout reminders, respects quiet hours, and records notification history. On Hobby, Vercel may invoke the job within the scheduled hour (±59 minutes); the saved per-user reminder time is a preference but cannot be honored exactly with one daily run. Use Pro or an external scheduler for more frequent or precise per-user delivery. Cron runs on production deployments; preview/local environments do not run the schedule automatically.
-5. Users must install the app where required by their mobile browser, grant notification permission, and enable reminders in **Account → Push notifications**. Browser and operating-system notification settings can still block delivery.
+Für eine vollständig neue Datenbank Migrationen 001–004 in Reihenfolge anwenden. Öffentliche Supabase-Variablen müssen zur Build-Zeit auch in Vercel vorhanden sein. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` funktioniert alternativ zu `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Private Schlüssel erhalten niemals das Präfix `NEXT_PUBLIC_`.
 
-## What is stored
+## KI-Abläufe
 
-- Today: selected week/day, training-plan day, actual/planned meals, pending manual food approvals, measurements, journal notes, and water entries.
-- Train: personal exercise library, editable plans and plan days, session/set logs, volume, and estimated one-rep-max records.
-- Nutrition: per-100 g food library, dated meals, approval state, targets, and diary export.
-- Body: profile values, dated measurements, editable goals, and milestones.
-- Insights: session consistency, completed training volume, approved nutrition, target history, sleep, mood, hydration, and body measurements over a selected date range.
-- Account: editable profile and target history, push preferences/devices, notification history, sign out, and CSV export.
+- **Train:** Wünsche im Chat beschreiben, Vorschlag bearbeiten und **Plan übernehmen** drücken. Der Plan wird mit Tagen und Übungen gespeichert. **Im Kalender aktivieren** ordnet ihn der Woche zu. Eine Ganzkörper-Vorlage für drei Tage ist ebenfalls verfügbar.
+- **Training:** Tag starten, beliebige Übung auswählen, Satz bestätigen, Pause und nächsten Satz erledigen. Die Reihenfolge lässt sich während der Einheit ändern. Gespeicherte Sätze bleiben bei Unterbrechungen erhalten; die Reihenfolge selbst gilt für die aktuelle Ansicht. **Training abschließen** speichert Dauer, Volumen und Rekorde.
+- **Nutrition:** Foto aufnehmen, aus der Galerie wählen oder eine Mahlzeit beschreiben. Die KI erkennt Speisen und schätzt die gesamte sichtbare Portion. Alle Speisen und volle Portionen sind vorausgewählt. Ganze/halbe/doppelte Portion, Mengen und Nährwerte sind vor dem Speichern editierbar.
+- **Speichern:** **Tagesbedarf** erfasst gegessenes Essen; **Kalender** speichert einen geplanten Eintrag; **Speiseauswahl** legt nur einen Bibliothekseintrag an. Geplante Mahlzeiten zählen erst nach Bestätigung als gegessen. Neue Speisen werden zusätzlich in der Bibliothek gespeichert. Bei vorhandenen Namen bleiben dort manuell bearbeitete Werte erhalten.
+- Fotos werden im Browser auf höchstens 1280 Pixel verkleinert und als JPEG übertragen. Originaldateien bis 20 MB in JPG/PNG/WebP sind möglich; HEIC vorher umwandeln. Die App speichert die Fotos nicht. Text, Foto und bisherige Nachrichten der aktuellen Unterhaltung werden an OpenRouter und dessen Modellanbieter übermittelt. Das persönliche Tracker-Profil wird nicht automatisch angehängt.
+- Kalorien und Nährwerte aus Fotos sind **Schätzungen**, keine Messwerte. Unbekannte zusätzliche Nährwerte bleiben leer. Die App prüft strukturierte Modellantworten mit Zod, bevor sie übernommen werden können. Ein Modell darf keine Datenbankaktionen direkt ausführen.
 
-All app data is scoped to the signed-in user, with server-side ownership checks and Supabase row-level security. Nutrition targets are estimates based on the profile and the Mifflin–St Jeor formula; users can set manual targets.
+## Kostenlose Modelle
 
-## Meal ideas, starter plan and AI
+[`openrouter/free`](https://openrouter.ai/docs/guides/routing/routers/free-router) wählt ein kostenloses Modell passend zu Bildverständnis und JSON-Ausgabe. Alternativ ist ein konkretes Modell mit `:free` erlaubt. Die App blockiert kostenpflichtige Modellnamen und verwendet keinen kostenpflichtigen Fallback.
 
-Nutrition includes 24 meal ideas. Select one and enter nutrition values for your own ingredients and portion before adding it to your diary or plan. Train offers an editable three-day full-body starter plan; add it and select **Set active** when ready. Neither feature creates workout history or food consumption automatically.
+[OpenRouter-Limits](https://openrouter.ai/docs/api/reference/limits) gelten für das gemeinsame API-Konto; kostenlose Konten haben typischerweise 50 Anfragen pro Tag und 20 pro Minute. Verfügbarkeit und Modellqualität können schwanken. Die Datenbank begrenzt diese App zusätzlich auf 30 Versuche pro Konto und 45 insgesamt pro UTC-Tag, mit mindestens acht Sekunden Abstand je Konto. Fehlgeschlagene Versuche zählen mit. Manuelle Eingaben bleiben verfügbar.
 
-The optional assistant on Train and Nutrition uses the OpenAI Responses API. Set server-only `OPENAI_API_KEY` and `AI_ALLOWED_EMAILS` (a comma-separated list of allowed account email addresses) in `.env.local` and in Vercel (then redeploy). `OPENAI_MODEL` is optional and defaults to `gpt-4.1-mini`. Requests may incur OpenAI API charges. Only the question and its topic are sent; account and tracker data are not included automatically. AI suggestions do not change saved records. Restrict signups or add durable per-user rate limiting and usage controls before making a deployment available to untrusted users.
+## PWA und Push
+
+Manifest, Installationssymbole, Service Worker und Offline-Seite bleiben vorhanden. Der Service Worker speichert keine privaten Daten oder API-Antworten. Zum Bearbeiten und Speichern ist eine Verbindung erforderlich.
+
+Für Push die bisherigen VAPID-Schlüssel, `VAPID_SUBJECT`, `CRON_SECRET` und den serverseitigen `SUPABASE_SERVICE_ROLE_KEY` beibehalten. Geräte und Ruhezeiten werden unter **Konto → Benachrichtigungen** verwaltet. Auf iOS die App zuerst über Teilen → Zum Home-Bildschirm hinzufügen installieren.
+
+Der Vercel-Hobby-Cron läuft täglich um **07:00 UTC** mit bis zu 59 Minuten Zeitabweichung. Er sendet aktivierte Check-ins und Erinnerungen an verpasste Trainings. Liegt der Lauf in einer Ruhezeit, wird die Nachricht ausgelassen. Individuelle minutengenaue Zustellung erfordert einen häufigeren externen Scheduler oder einen passenden Vercel-Tarif.
+
+## Prüfen
+
+- `npm run lint`
+- `npm run build`
+- `npm run test:ai` prüft Portionen, Nährwert-Validierung, Datum und Planstruktur.
+- `npm run test:db` führt die echten Migrationen in einer isolierten PGlite-Postgres-Datenbank aus. Geprüft werden Import-Rollback, Wiederholungen, volle Portionen, Bibliothekswerte, Training, Rekorde, Quoten und Zugriffstrennung zwischen zwei Konten. Es wird keine Verbindung zur echten Supabase-Datenbank aufgebaut.

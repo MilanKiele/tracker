@@ -1,3 +1,28 @@
 import Link from "next/link";
-import { Leaf, Settings2 } from "lucide-react";
-export function SetupRequired(){return <main className="setup-page"><section className="setup-card"><span className="brand-mark"><Leaf size={20}/></span><div className="eyebrow">ONE LAST CONNECTION</div><h1>Connect your private space.</h1><p>Everwell reads and writes your own records through Supabase. Add these public project settings locally, apply the migrations, and then sign in. No example health history is shown.</p><pre>{`NEXT_PUBLIC_SUPABASE_URL=https://…supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=your-publishable-key`}</pre><ol><li>Create or select your Supabase project.</li><li>Run every SQL file in <code>supabase/migrations/</code> in order.</li><li>Copy the URL and publishable/anon key into <code>.env.local</code>, then restart the app.</li><li>Set the same public variables in Vercel for Production, Preview, and Development.</li></ol><Link href="/login" className="button button-primary"><Settings2 size={15}/> Open sign in</Link><p className="setup-foot">Your service-role key must stay server-side and is never needed in the browser.</p></section></main>}
+import { Leaf } from "lucide-react";
+export function SetupRequired() {
+  return (
+    <main className="setup-page">
+      <section className="setup-card">
+        <span className="brand-mark">
+          <Leaf size={22} />
+        </span>
+        <h1>Workspace verbinden.</h1>
+        <p>
+          Für deine gespeicherten Daten fehlt noch die Supabase-Konfiguration.
+        </p>
+        <pre>{`NEXT_PUBLIC_SUPABASE_URL=…\nNEXT_PUBLIC_SUPABASE_ANON_KEY=…`}</pre>
+        <ol>
+          <li>Variablen lokal oder in Vercel hinterlegen.</li>
+          <li>
+            Migrationen 001–004 im bestehenden Supabase-Projekt ausführen.
+          </li>
+          <li>App neu starten bzw. neu deployen.</li>
+        </ol>
+        <Link href="/login" className="btn btn-primary">
+          Zur Anmeldung
+        </Link>
+      </section>
+    </main>
+  );
+}
