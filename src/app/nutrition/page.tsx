@@ -17,4 +17,3 @@ export default async function Page({
     </AppShell>
   );
 }
-export const instant = false;

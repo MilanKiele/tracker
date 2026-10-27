@@ -17,4 +17,3 @@ export default async function Home({
     </AppShell>
   );
 }
-export const instant = false;

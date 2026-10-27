@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { addDays, differenceInCalendarDays, endOfWeek, format, parseISO, startOfWeek, subDays } from "date-fns";
+import { cacheLife } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPublicSupabaseConfig } from "@/lib/supabase/config";
@@ -56,6 +57,8 @@ const isDate = (value?: string): value is string =>
     new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value,
   );
 export async function getTodayData(dateValue?: string) {
+  "use cache: private";
+  cacheLife({ stale: 300 });
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return { context: ctx, days: [], activePlan: null };
@@ -337,6 +340,8 @@ export async function getTodayData(dateValue?: string) {
   };
 }
 export async function getNutritionData(dateValue?: string) {
+  "use cache: private";
+  cacheLife({ stale: 300 });
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return {
@@ -415,6 +420,8 @@ export async function getNutritionData(dateValue?: string) {
   };
 }
 export async function getTrainingData() {
+  "use cache: private";
+  cacheLife({ stale: 300 });
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return {
@@ -544,6 +551,8 @@ export async function getTrainingData() {
   };
 }
 export async function getBodyData() {
+  "use cache: private";
+  cacheLife({ stale: 300 });
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return { context: ctx, measurements: [], goals: [], milestones: [] };
@@ -581,6 +590,8 @@ export async function getBodyData() {
   };
 }
 export async function getInsightsData(fromValue?: string, toValue?: string) {
+  "use cache: private";
+  cacheLife({ stale: 300 });
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return {
@@ -677,6 +688,8 @@ export async function getInsightsData(fromValue?: string, toValue?: string) {
   };
 }
 export async function getAccountData() {
+  "use cache: private";
+  cacheLife({ stale: 300 });
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return {

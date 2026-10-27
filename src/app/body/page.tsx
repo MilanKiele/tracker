@@ -3,7 +3,6 @@ import { SetupRequired } from "@/components/setup-required";
 import { BodyPage } from "@/components/real-pages";
 import { getBodyData } from "@/lib/data";
 
-export const instant = false;
 export default async function Page() {
   const data = await getBodyData();
   if (data.context.status === "setup") return <SetupRequired />;
