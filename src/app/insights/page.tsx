@@ -1,3 +1,11 @@
 import { AppShell } from "@/components/app-shell";
-import { InsightsPage } from "@/components/tracker-pages";
-export default function Page() { return <AppShell><InsightsPage /></AppShell>; }
+import { SetupRequired } from "@/components/setup-required";
+import { InsightsPage } from "@/components/real-pages";
+import { getInsightsData } from "@/lib/data";
+
+export default async function Page({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+  const { from, to } = await searchParams; const data = await getInsightsData(from, to);
+  if (data.context.status === "setup") return <SetupRequired />;
+  return <AppShell profile={data.context.profile} email={data.context.user?.email}><InsightsPage data={data} /></AppShell>;
+}
+export const instant = false;

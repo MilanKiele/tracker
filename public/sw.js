@@ -14,3 +14,17 @@ self.addEventListener('fetch', (event) => {
     return response;
   })));
 });
+self.addEventListener('push', (event) => {
+  let payload={title:'Everwell',body:'You have a new reminder.',url:'/account#notifications'};
+  try { if(event.data) payload={...payload,...event.data.json()}; } catch { if(event.data) payload.body=event.data.text(); }
+  event.waitUntil(self.registration.showNotification(payload.title,{body:payload.body,icon:'/icon-192.png',badge:'/icon-192.png',data:{url:payload.url||'/account#notifications'},tag:payload.tag||undefined}));
+});
+self.addEventListener('notificationclick',(event)=>{
+  event.notification.close();
+  const target=new URL(event.notification.data?.url||'/account#notifications',self.location.origin).href;
+  event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then((windows)=>{
+    const match=windows.find((client)=>new URL(client.url).origin===self.location.origin);
+    if(match){match.navigate(target);return match.focus();}
+    return clients.openWindow(target);
+  }));
+});

@@ -4,6 +4,8 @@ import { getPublicSupabaseConfig } from "./config";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+  // The scheduled push endpoint performs its own Bearer-token check.
+  if (request.nextUrl.pathname === "/api/notifications/reminders") return response;
   const { url, key, configured } = getPublicSupabaseConfig();
   if (!configured) return response;
   const supabase = createServerClient(url, key, {

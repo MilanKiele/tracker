@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { endOfWeek, format, parseISO, startOfWeek } from "date-fns";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -19,10 +20,11 @@ export async function requireReadyContext() {
   return ctx;
 }
 const rows = (value: unknown) => Array.isArray(value) ? value : [];
+const isDate = (value?: string): value is string => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0,10) === value);
 export async function getTodayData(dateValue?: string) {
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user) return { context: ctx, days: [], activePlan: null };
-  const date = dateValue && /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? parseISO(dateValue) : new Date();
+  const date = isDate(dateValue) ? parseISO(dateValue) : new Date();
   const start = startOfWeek(date, { weekStartsOn: 1 });
   const end = endOfWeek(date, { weekStartsOn: 1 });
   const startDate = format(start, "yyyy-MM-dd");
@@ -44,6 +46,13 @@ export async function getTodayData(dateValue?: string) {
     const { data } = await supabase.from("plan_days").select("id,name,day_order,weekday,is_rest_day").eq("user_id", uid).eq("plan_id", plan.id).order("day_order");
     planDays = rows(data);
   }
+  let planExerciseRows: any[] = [];
+  if (planDays.length) {
+    const { data } = await supabase.from("plan_exercises").select("id,day_id,exercise_id,exercise_order,target_sets,rep_min,rep_max,rest_seconds,notes").eq("user_id", uid).in("day_id", planDays.map((item) => item.id)).order("exercise_order");
+    planExerciseRows = rows(data);
+  }
+  const exerciseIds = [...new Set(planExerciseRows.map((item) => item.exercise_id))];
+  const { data: planExercises } = exerciseIds.length ? await supabase.from("exercises").select("id,name,primary_muscle,equipment").eq("user_id", uid).in("id", exerciseIds) : { data: [] };
   const days = Array.from({ length: 7 }, (_, index) => {
     const dayDate = new Date(start); dayDate.setDate(start.getDate() + index);
     const key = format(dayDate, "yyyy-MM-dd");
@@ -53,7 +62,7 @@ export async function getTodayData(dateValue?: string) {
     const totals = (items: any[]) => items.reduce((total, item) => ({ kcal: total.kcal + Number(item.kcal || 0), protein: total.protein + Number(item.protein_g || 0), carbs: total.carbs + Number(item.carbs_g || 0), fat: total.fat + Number(item.fat_g || 0) }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
     const weekday = (dayDate.getDay() + 6) % 7;
     const session = rows(sessionsResult.data).filter((item: any) => format(parseISO(item.started_at), "yyyy-MM-dd") === key);
-    return { date: key, label: format(dayDate, "EEE"), shortDate: format(dayDate, "MMM d"), meals: dayMeals, actual: totals(actual), planned: totals(planned), planDay: planDays.find((item) => item.weekday === weekday) ?? null, sessions: session,
+    return { date: key, label: format(dayDate, "EEE"), shortDate: format(dayDate, "MMM d"), meals: dayMeals, actual: totals(actual), planned: totals(planned), planDay: (() => { const day = planDays.find((item) => item.weekday === weekday) ?? null; return day ? { ...day, exercises: planExerciseRows.filter((item) => item.day_id === day.id).map((item) => ({ ...item, exercise: rows(planExercises).find((exercise: any) => exercise.id === item.exercise_id) ?? null })) } : null; })(), sessions: session,
       measurement: rows(measuresResult.data).filter((item: any) => item.measured_at === key).at(-1) ?? null,
       journal: rows(journalResult.data).find((item: any) => item.entry_date === key) ?? null,
       waterMl: rows(waterResult.data).filter((item: any) => item.entry_date === key).reduce((sum: number, item: any) => sum + item.amount_ml, 0),
@@ -63,8 +72,8 @@ export async function getTodayData(dateValue?: string) {
 }
 export async function getNutritionData(dateValue?: string) {
   const ctx = await requireReadyContext();
-  if (ctx.status !== "ready" || !ctx.user) return { context: ctx, entries: [], foods: [], targets: [], date: dateValue ?? format(new Date(), "yyyy-MM-dd") };
-  const date = dateValue && /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : format(new Date(), "yyyy-MM-dd");
+  if (ctx.status !== "ready" || !ctx.user) return { context: ctx, entries: [], foods: [], targets: [], date: dateValue ?? null };
+  const date = isDate(dateValue) ? dateValue : format(new Date(), "yyyy-MM-dd");
   const supabase = await createClient(); const uid = ctx.user.id;
   const [entries, foods, targets, settings] = await Promise.all([
     supabase.from("meal_entries").select("*").eq("user_id", uid).eq("entry_date", date).is("archived_at", null).order("created_at"),
@@ -90,7 +99,13 @@ export async function getTrainingData() {
   const items = rows(planExerciseData).map((item: any) => ({ ...item, exercise: exerciseRows.find((exercise: any) => exercise.id === item.exercise_id) ?? null }));
   const hydratedPlans = planRows.map((plan: any) => ({ ...plan, days: dayRows.filter((day: any) => day.plan_id === plan.id).map((day: any) => ({ ...day, exercises: items.filter((item: any) => item.day_id === day.id) })) }));
   const { data: records } = await supabase.from("personal_records").select("*").eq("user_id", uid).order("achieved_at", { ascending: false }).limit(40);
-  return { context: ctx, plans: hydratedPlans, exercises: exerciseRows, sessions: rows(sessions.data), records: rows(records), activePlan: hydratedPlans.find((plan: any) => plan.is_active) ?? null };
+  const sessionRows = rows(sessions.data);
+  const sessionIds = sessionRows.map((session: any) => session.id);
+  const { data: loggedExercises } = sessionIds.length ? await supabase.from("workout_exercises").select("*").eq("user_id", uid).in("session_id", sessionIds) : { data: [] };
+  const exerciseLogs = rows(loggedExercises);
+  const { data: setRows } = exerciseLogs.length ? await supabase.from("workout_sets").select("*").eq("user_id", uid).in("workout_exercise_id", exerciseLogs.map((item: any) => item.id)).order("set_number") : { data: [] };
+  const history = sessionRows.map((session: any) => ({ ...session, exercises: exerciseLogs.filter((item: any) => item.session_id === session.id).map((item: any) => ({ ...item, sets: rows(setRows).filter((set: any) => set.workout_exercise_id === item.id) })) }));
+  return { context: ctx, plans: hydratedPlans, exercises: exerciseRows, sessions: history, records: rows(records), activePlan: hydratedPlans.find((plan: any) => plan.is_active) ?? null };
 }
 export async function getBodyData() {
   const ctx = await requireReadyContext();
@@ -107,15 +122,23 @@ export async function getBodyData() {
 export async function getInsightsData(fromValue?: string, toValue?: string) {
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user) return { context: ctx, sessions: [], meals: [], measurements: [], days: [] };
-  const from = fromValue && /^\d{4}-\d{2}-\d{2}$/.test(fromValue) ? fromValue : format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
-  const to = toValue && /^\d{4}-\d{2}-\d{2}$/.test(toValue) ? toValue : format(new Date(), "yyyy-MM-dd");
+  const initialFrom = isDate(fromValue) ? fromValue : format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+  const initialTo = isDate(toValue) ? toValue : format(new Date(), "yyyy-MM-dd");
+  const from = initialFrom <= initialTo ? initialFrom : initialTo;
+  const to = initialFrom <= initialTo ? initialTo : initialFrom;
   const supabase = await createClient(); const uid = ctx.user.id;
-  const [sessions, meals, measurements] = await Promise.all([
+  const [sessions, meals, measurements, targets, profile, journal, water] = await Promise.all([
     supabase.from("workout_sessions").select("*").eq("user_id", uid).gte("started_at", `${from}T00:00:00`).lte("started_at", `${to}T23:59:59`).is("archived_at", null).order("started_at"),
     supabase.from("meal_entries").select("*").eq("user_id", uid).gte("entry_date", from).lte("entry_date", to).is("archived_at", null).order("entry_date"),
     supabase.from("measurements").select("*").eq("user_id", uid).gte("measured_at", from).lte("measured_at", to).order("measured_at"),
+    supabase.from("nutrition_targets").select("*").eq("user_id", uid).lte("effective_from", to).order("effective_from"),
+    supabase.from("profiles").select("full_name,goal,weight_kg,height_cm,birth_date").eq("user_id", uid).maybeSingle(),
+    supabase.from("daily_journal").select("entry_date,sleep_hours,mood,energy").eq("user_id", uid).gte("entry_date", from).lte("entry_date", to),
+    supabase.from("water_entries").select("entry_date,amount_ml").eq("user_id", uid).gte("entry_date", from).lte("entry_date", to),
   ]);
-  return { context: ctx, sessions: rows(sessions.data), meals: rows(meals.data), measurements: rows(measurements.data), from, to };
+  const yearStart = `${to.slice(0, 4)}-01-01`, yearEnd = `${to.slice(0,4)}-12-31`;
+  const { data: yearSessions } = await supabase.from("workout_sessions").select("started_at,total_volume").eq("user_id", uid).gte("started_at", `${yearStart}T00:00:00`).lte("started_at", `${yearEnd}T23:59:59`).is("archived_at", null);
+  return { context: ctx, sessions: rows(sessions.data), meals: rows(meals.data), measurements: rows(measurements.data), targets: rows(targets.data), profile: profile.data, journal: rows(journal.data), water: rows(water.data), yearSessions: rows(yearSessions), from, to };
 }
 export async function getAccountData() {
   const ctx = await requireReadyContext();
