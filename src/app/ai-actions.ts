@@ -46,8 +46,11 @@ export async function importPlan(input: unknown) {
     p_plan: data.plan,
   });
   check(result.error);
+  const imported = z.object({ plan_id: z.string().uuid() }).parse(result.data);
+  const activation = await db.rpc("activate_training_plan", { p_plan_id: imported.plan_id });
+  check(activation.error);
   refresh();
-  return z.object({ plan_id: z.string().uuid() }).parse(result.data);
+  return imported;
 }
 export async function importFood(input: unknown) {
   const parsed = z
@@ -154,6 +157,7 @@ export async function applyAiAction(input: unknown) {
       .eq("user_id", user.id)
       .lte("effective_from", action.effective_from)
       .order("effective_from", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     check(currentError);
@@ -173,12 +177,19 @@ export async function applyAiAction(input: unknown) {
       carbs_g: action.carbs_g ?? existingCarbs * scale,
       fat_g: action.fat_g ?? existingFat * scale,
     };
-    const { error } = await db.from("nutrition_targets").insert({
+    const targetValues = {
       ...target,
       user_id: user.id,
       is_manual: true,
       calculation: { source: "KI-Vorschlag, vom Nutzer bestätigt", partial_update_preserved_existing_macros: true },
-    });
+    };
+    const { data: sameDate, error: sameDateError } = await db.from("nutrition_targets")
+      .select("id").eq("user_id", user.id).eq("effective_from", action.effective_from)
+      .eq("is_manual", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    check(sameDateError);
+    const { error } = sameDate
+      ? await db.from("nutrition_targets").update(targetValues).eq("id", sameDate.id).eq("user_id", user.id)
+      : await db.from("nutrition_targets").insert(targetValues);
     check(error);
   }
 
@@ -193,6 +204,51 @@ export async function applyAiAction(input: unknown) {
       .maybeSingle();
     check(error);
     if (!data) throw new Error("Mahlzeit nicht gefunden.");
+  }
+
+  if (action.type === "meal_template") {
+    let source: Record<string, unknown> | null = null;
+    if (action.template_id) {
+      const { data, error } = await db.from("meal_plan_templates")
+        .select("name,amount_grams,kcal,protein_g,carbs_g,fat_g")
+        .eq("id", action.template_id).eq("user_id", user.id)
+        .eq("is_active", true).maybeSingle();
+      check(error);
+      if (!data) throw new Error("Die wöchentliche Essensvorlage wurde nicht gefunden.");
+      source = data as Record<string, unknown>;
+    }
+    if (action.source_meal_id) {
+      const { data, error } = await db.from("meal_entries")
+        .select("name,amount_grams,kcal,protein_g,carbs_g,fat_g")
+        .eq("id", action.source_meal_id).eq("user_id", user.id)
+        .is("archived_at", null).maybeSingle();
+      check(error);
+      if (!data) throw new Error("Die Mahlzeit für die wiederkehrende Vorlage wurde nicht gefunden.");
+      source = { ...source, ...(data as Record<string, unknown>) };
+    }
+    const values = {
+      user_id: user.id,
+      weekday: action.weekday,
+      meal_slot: action.meal_slot,
+      name: action.name ?? String(source?.name),
+      amount_grams: action.amount_grams ?? Number(source?.amount_grams),
+      kcal: action.kcal ?? Number(source?.kcal),
+      protein_g: action.protein_g ?? Number(source?.protein_g),
+      carbs_g: action.carbs_g ?? Number(source?.carbs_g),
+      fat_g: action.fat_g ?? Number(source?.fat_g),
+      active_from: action.active_from ?? today,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    };
+    if (action.template_id) {
+      const { data, error } = await db.from("meal_plan_templates").update(values)
+        .eq("id", action.template_id).eq("user_id", user.id).select("id").maybeSingle();
+      check(error);
+      if (!data) throw new Error("Die wiederkehrende Mahlzeit wurde nicht gefunden.");
+    } else {
+      const { error } = await db.from("meal_plan_templates").insert(values);
+      check(error);
+    }
   }
 
   if (action.type === "profile") {
@@ -283,6 +339,48 @@ export async function applyAiAction(input: unknown) {
     if (!data) throw new Error("Benachrichtigung nicht gefunden.");
   }
 
+  if (action.type === "delete_entry") {
+    if (action.entity === "meal_template_occurrence") {
+      const { error } = await db.from("meal_plan_template_skips").upsert({
+        user_id: user.id,
+        template_id: action.id,
+        entry_date: action.entry_date!,
+      }, { onConflict: "user_id,template_id,entry_date" });
+      check(error);
+    } else {
+    const tableByEntity = {
+      meal: "meal_entries",
+      meal_template: "meal_plan_templates",
+      water: "water_entries",
+      measurement: "measurements",
+      goal: "measurement_goals",
+      plan: "training_plans",
+      plan_exercise: "plan_exercises",
+      workout: "workout_sessions",
+    } as const;
+    const table = tableByEntity[action.entity];
+    if (action.entity === "meal_template") {
+      const { data, error } = await db.from(table)
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq("id", action.id).eq("user_id", user.id).select("id").maybeSingle();
+      check(error);
+      if (!data) throw new Error("Wiederkehrende Mahlzeit nicht gefunden.");
+    } else if (["meal", "goal", "plan", "workout"].includes(action.entity)) {
+      const { data, error } = await db.from(table)
+        .update({ archived_at: new Date().toISOString() })
+        .eq("id", action.id).eq("user_id", user.id).select("id").maybeSingle();
+      check(error);
+      if (!data) throw new Error("Eintrag nicht gefunden.");
+    } else {
+      const { data, error } = await db.from(table)
+        .delete().eq("id", action.id).eq("user_id", user.id)
+        .select("id").maybeSingle();
+      check(error);
+      if (!data) throw new Error("Eintrag nicht gefunden.");
+    }
+    }
+  }
+
   refresh();
   return { saved: true };
 }
@@ -327,5 +425,72 @@ export async function eatPlannedMeal(id: string) {
     .eq("id", z.string().uuid().parse(id))
     .eq("user_id", user!.id);
   check(result.error);
+  refresh();
+}
+
+export async function eatMealTemplate(templateId: string, date: string) {
+  const parsedId = z.string().uuid().parse(templateId);
+  const entryDate = dateSchema.parse(date);
+  const db = await client();
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) throw new Error("Bitte erneut anmelden.");
+  const { data: template, error: templateError } = await db.from("meal_plan_templates")
+    .select("id,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g")
+    .eq("id", parsedId).eq("user_id", user.id).eq("is_active", true).maybeSingle();
+  check(templateError);
+  if (!template) throw new Error("Die wiederkehrende Mahlzeit wurde nicht gefunden.");
+  const { data: existing, error: existingError } = await db.from("meal_entries")
+    .select("id").eq("user_id", user.id).eq("source_template_id", parsedId)
+    .eq("entry_date", entryDate).maybeSingle();
+  check(existingError);
+  if (existing) {
+    const { error } = await db.from("meal_entries").update({
+      is_planned: false, review_status: "approved", archived_at: null,
+    }).eq("id", existing.id).eq("user_id", user.id);
+    check(error);
+  } else {
+    const { error } = await db.from("meal_entries").insert({
+      user_id: user.id,
+      source_template_id: parsedId,
+      entry_date: entryDate,
+      meal_slot: template.meal_slot,
+      name: template.name,
+      amount_grams: template.amount_grams,
+      kcal: template.kcal,
+      protein_g: template.protein_g,
+      carbs_g: template.carbs_g,
+      fat_g: template.fat_g,
+      is_planned: false,
+      review_status: "approved",
+      notes: "Aus wöchentlicher Essensvorlage übernommen.",
+    });
+    check(error);
+  }
+  refresh();
+}
+
+export async function removeMealTemplate(templateId: string) {
+  const parsedId = z.string().uuid().parse(templateId);
+  const db = await client();
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) throw new Error("Bitte erneut anmelden.");
+  const { data, error } = await db.from("meal_plan_templates")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", parsedId).eq("user_id", user.id).select("id").maybeSingle();
+  check(error);
+  if (!data) throw new Error("Wöchentliche Essensvorlage nicht gefunden.");
+  refresh();
+}
+
+export async function skipMealTemplate(templateId: string, date: string) {
+  const parsedId = z.string().uuid().parse(templateId);
+  const entryDate = dateSchema.parse(date);
+  const db = await client();
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) throw new Error("Bitte erneut anmelden.");
+  const { error } = await db.from("meal_plan_template_skips").upsert({
+    user_id: user.id, template_id: parsedId, entry_date: entryDate,
+  }, { onConflict: "user_id,template_id,entry_date" });
+  check(error);
   refresh();
 }

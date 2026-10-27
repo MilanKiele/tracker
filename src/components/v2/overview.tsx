@@ -219,6 +219,9 @@ export function TodayPage({ data }: { data: any }) {
                 </span>
                 <div>
                   <h3>{day.planDay.name}</h3>
+                  {day.planDay.auto_rescheduled && (
+                    <small className="auto-rescheduled-note">Plan nach Pause angepasst</small>
+                  )}
                   <p>
                     {day.planDay.exercises.length} Übungen ·{" "}
                     {data.activePlan?.name}
@@ -296,7 +299,7 @@ export function TodayPage({ data }: { data: any }) {
               {day.meals
                 .filter((m: any) => m.review_status !== "denied")
                 .map((m: any) => (
-                  <MealRow meal={m} key={m.id} onEdit={() => setMeal(m)} />
+                  <MealRow meal={m} key={m.id} onEdit={m.is_template ? undefined : () => setMeal(m)} />
                 ))}
             </div>
           ) : (

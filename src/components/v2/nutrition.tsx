@@ -22,10 +22,11 @@ import {
   createFood,
   createMeal,
   reviewMeal,
+  saveNutritionTargets,
   updateFood,
   updateMeal,
 } from "@/app/actions";
-import { eatPlannedMeal } from "@/app/ai-actions";
+import { eatMealTemplate, eatPlannedMeal, skipMealTemplate } from "@/app/ai-actions";
 import { PageHeading } from "@/components/app-shell";
 import { useAi } from "./ai-flow";
 import {
@@ -169,6 +170,7 @@ export function NutritionPage({ data }: { data: any }) {
   const [entry, setEntry] = useState<any>(null);
   const [food, setFood] = useState<any>(null);
   const [search, setSearch] = useState("");
+  const [targetOpen, setTargetOpen] = useState(false);
   return (
     <>
       <PageHeading
@@ -192,9 +194,9 @@ export function NutritionPage({ data }: { data: any }) {
               action={
                 <button
                   className="icon-btn"
-                  aria-label="Tagesziel im Chat ändern"
-                  title="Tagesziel im Chat ändern"
-                  onClick={() => openAi("food", date, `Ich möchte mein Tagesziel ändern. Aktuell: ${target?.kcal ?? "unbekannt"} kcal, ${target?.protein_g ?? "unbekannt"} g Protein, ${target?.carbs_g ?? "unbekannt"} g Kohlenhydrate und ${target?.fat_g ?? "unbekannt"} g Fett. Frag mich nach den gewünschten Änderungen und übernimm sie nach meiner Bestätigung.`)}
+                  aria-label="Tagesziel bearbeiten"
+                  title="Tagesziel manuell bearbeiten"
+                  onClick={() => setTargetOpen(true)}
                 >
                   <MoreHorizontal size={20} />
                 </button>
@@ -239,7 +241,7 @@ export function NutritionPage({ data }: { data: any }) {
                       <MealRow
                         key={meal.id}
                         meal={meal}
-                        onEdit={() => setEntry(meal)}
+                        onEdit={meal.is_template ? undefined : () => setEntry(meal)}
                       />
                     ))
                   ) : (
@@ -394,6 +396,9 @@ export function NutritionPage({ data }: { data: any }) {
         />
       )}
       {food && <FoodEditor food={food} onClose={() => setFood(null)} />}
+      {targetOpen && (
+        <TargetEditor target={target} date={date} onClose={() => setTargetOpen(false)} />
+      )}
     </>
   );
 }
@@ -422,7 +427,9 @@ export function MealRow({ meal, onEdit }: { meal: any; onEdit?: () => void }) {
       {meal.is_planned ? (
         <ActionButton
           className="icon-btn add-food"
-          action={() => eatPlannedMeal(meal.id)}
+          action={() => meal.is_template
+            ? eatMealTemplate(meal.template_id, meal.entry_date)
+            : eatPlannedMeal(meal.id)}
           message="Als gegessen erfasst."
         >
           <Check size={17} />
@@ -438,7 +445,7 @@ export function MealRow({ meal, onEdit }: { meal: any; onEdit?: () => void }) {
           <span className="sr-only">Eintrag bestätigen</span>
         </ActionButton>
       ) : null}
-      {onEdit && (
+      {onEdit && !meal.is_template && (
         <button
           className="icon-btn"
           aria-label={`${meal.name} bearbeiten`}
@@ -449,8 +456,10 @@ export function MealRow({ meal, onEdit }: { meal: any; onEdit?: () => void }) {
       )}
       <ActionButton
         className="icon-btn subtle-danger"
-        action={() => archiveMeal(meal.id)}
-        message="Eintrag entfernt."
+        action={() => meal.is_template
+          ? skipMealTemplate(meal.template_id, meal.entry_date)
+          : archiveMeal(meal.id)}
+        message={meal.is_template ? "Diese Mahlzeit wurde heute aus dem Plan entfernt." : "Eintrag entfernt."}
       >
         <Trash2 size={14} />
         <span className="sr-only">Eintrag entfernen</span>
@@ -751,6 +760,64 @@ function FoodEditor({ food, onClose }: { food: any; onClose: () => void }) {
           <Trash2 size={16} /> Entfernen
         </ActionButton>
       )}
+    </Modal>
+  );
+}
+
+function TargetEditor({
+  target,
+  date,
+  onClose,
+}: {
+  target: any;
+  date: string;
+  onClose: () => void;
+}) {
+  const { run } = useFeedback();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal title="Dein Tagesziel" onClose={onClose}>
+      <form
+        className="form-stack"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          setBusy(true);
+          const ok = await run(
+            () => saveNutritionTargets({
+              kcal: Number(form.get("kcal")),
+              protein_g: Number(form.get("protein_g")),
+              carbs_g: Number(form.get("carbs_g")),
+              fat_g: Number(form.get("fat_g")),
+              effective_from: date,
+            }),
+            "Tagesziel gespeichert.",
+          );
+          setBusy(false);
+          if (ok) onClose();
+        }}
+      >
+        <div className="form-grid">
+          {[
+            ["kcal", "Kalorien"],
+            ["protein_g", "Protein g"],
+            ["carbs_g", "Kohlenhydrate g"],
+            ["fat_g", "Fett g"],
+          ].map(([key, label]) => (
+            <NumberField
+              key={key}
+              name={key}
+              label={label}
+              min={key === "kcal" ? 500 : 0}
+              defaultValue={target?.[key] ?? ""}
+              required
+            />
+          ))}
+        </div>
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? "Speichert …" : "Tagesziel speichern"}
+        </button>
+      </form>
     </Modal>
   );
 }

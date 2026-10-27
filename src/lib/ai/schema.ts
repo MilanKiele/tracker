@@ -135,6 +135,20 @@ export const aiAction = z.discriminatedUnion("type", [
     fat_g: z.number().min(0).max(1000).optional(),
   }).refine((action) => Object.keys(action).some((key) => key !== "type" && key !== "meal_id")),
   z.object({
+    type: z.literal("meal_template"),
+    template_id: z.string().uuid().optional(),
+    source_meal_id: z.string().uuid().optional(),
+    weekday: z.number().int().min(0).max(6),
+    meal_slot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+    name: z.string().trim().min(1).max(140).optional(),
+    amount_grams: z.number().min(1).max(5000).optional(),
+    kcal: z.number().min(0).max(10000).optional(),
+    protein_g: z.number().min(0).max(1000).optional(),
+    carbs_g: z.number().min(0).max(1000).optional(),
+    fat_g: z.number().min(0).max(1000).optional(),
+    active_from: dateSchema.optional(),
+  }).refine((entry) => Boolean(entry.source_meal_id || entry.template_id) || Boolean(entry.name && entry.amount_grams != null && entry.kcal != null && entry.protein_g != null && entry.carbs_g != null && entry.fat_g != null)),
+  z.object({
     type: z.literal("profile"),
     full_name: z.string().trim().min(2).max(80).optional(),
     sex: z.enum(["female", "male", "intersex", "prefer_not_to_say"]).optional(),
@@ -155,6 +169,12 @@ export const aiAction = z.discriminatedUnion("type", [
     quiet_hours_end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   }).refine((action) => Object.keys(action).some((key) => key !== "type")),
   z.object({ type: z.literal("mark_notification_read"), notification_id: z.string().uuid() }),
+  z.object({
+    type: z.literal("delete_entry"),
+    entity: z.enum(["meal", "meal_template", "meal_template_occurrence", "water", "measurement", "goal", "plan", "plan_exercise", "workout"]),
+    id: z.string().uuid(),
+    entry_date: dateSchema.optional(),
+  }).refine((action) => action.entity !== "meal_template_occurrence" || action.entry_date != null),
 ]);
 export const aiResult = z.discriminatedUnion("kind", [
   z.object({

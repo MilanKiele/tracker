@@ -307,7 +307,7 @@ export function AssistantWorkspace({
           mutation_id: mutation.current,
           plan: result.plan,
         });
-        notify("Plan gespeichert. Du kannst ihn unter Training öffnen.");
+        notify("Plan gespeichert, aktiviert und nach seinen Wochentagen im Kalender eingeplant.");
       }
       if (result.kind === "food") {
         const foods = result.foods
@@ -506,7 +506,7 @@ export function AssistantWorkspace({
             </div>
           )}
           <button
-            className="btn btn-primary full"
+            className={`btn ${result.kind === "action" && result.action.type === "delete_entry" ? "btn-danger" : "btn-primary"} full`}
             disabled={busy || saving}
             onClick={save}
           >
@@ -515,7 +515,13 @@ export function AssistantWorkspace({
             ) : (
               <Check size={17} />
             )}{" "}
-            {result.kind === "plan" ? "Plan übernehmen" : "Hinzufügen"}
+            {result.kind === "plan"
+              ? "Plan übernehmen"
+              : result.kind === "action" && result.action.type === "delete_entry"
+                ? "Eintrag löschen"
+                : result.kind === "action" && result.action.type === "meal_template"
+                  ? "Wöchentliche Vorlage speichern"
+                  : "Änderung übernehmen"}
           </button>
         </div>
       )}

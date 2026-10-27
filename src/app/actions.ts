@@ -351,12 +351,19 @@ export async function saveNutritionTargets(input: unknown) {
     })
     .parse(input);
   const { supabase, user } = await ownedClient();
-  const { error } = await supabase.from("nutrition_targets").insert({
+  const values = {
     ...data,
     user_id: user.id,
     is_manual: true,
     calculation: { source: "manual override" },
-  });
+  };
+  const existing = await supabase.from("nutrition_targets").select("id")
+    .eq("user_id", user.id).eq("effective_from", data.effective_from)
+    .eq("is_manual", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  fail(existing.error);
+  const { error } = existing.data
+    ? await supabase.from("nutrition_targets").update(values).eq("id", existing.data.id).eq("user_id", user.id)
+    : await supabase.from("nutrition_targets").insert(values);
   fail(error);
   revalidatePath("/");
   revalidatePath("/nutrition");

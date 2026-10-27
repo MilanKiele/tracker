@@ -3351,6 +3351,7 @@ label small {
 }
 
 .assistant-workspace { display:grid; grid-template-columns:260px minmax(0,1fr); gap:16px; max-width:1500px; min-height:calc(100dvh - 145px); margin:0 auto; }
+.auto-rescheduled-note { display:inline-block; margin-top:3px; color:#2f6545; font-weight:600; }
 .assistant-chat-sidebar,.assistant-thread { min-height:0; border:1px solid var(--line); border-radius:18px; background:var(--paper); }
 .assistant-chat-sidebar { display:flex; flex-direction:column; padding:14px; }
 .assistant-chat-sidebar-head { display:flex; align-items:center; justify-content:space-between; padding:4px 2px 12px; }

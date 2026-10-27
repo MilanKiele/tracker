@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { endOfWeek, format, parseISO, startOfWeek, subDays } from "date-fns";
+import { addDays, differenceInCalendarDays, endOfWeek, format, parseISO, startOfWeek, subDays } from "date-fns";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPublicSupabaseConfig } from "@/lib/supabase/config";
@@ -41,6 +41,13 @@ function checkQueries(
     );
 }
 const rows = (value: unknown) => (Array.isArray(value) ? value : []);
+const localAppDate = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 const isDate = (value?: string): value is string =>
   Boolean(
     value &&
@@ -52,7 +59,7 @@ export async function getTodayData(dateValue?: string) {
   const ctx = await requireReadyContext();
   if (ctx.status !== "ready" || !ctx.user)
     return { context: ctx, days: [], activePlan: null };
-  const date = isDate(dateValue) ? parseISO(dateValue) : new Date();
+  const date = parseISO(isDate(dateValue) ? dateValue : localAppDate());
   const start = startOfWeek(date, { weekStartsOn: 1 });
   const end = endOfWeek(date, { weekStartsOn: 1 });
   const startDate = format(start, "yyyy-MM-dd");
@@ -70,6 +77,8 @@ export async function getTodayData(dateValue?: string) {
     foodsResult,
     planExerciseResult,
     exerciseResult,
+    mealTemplatesResult,
+    mealTemplateSkipsResult,
   ] = await Promise.all([
     supabase
       .from("training_plans")
@@ -121,6 +130,7 @@ export async function getTodayData(dateValue?: string) {
       .eq("user_id", uid)
       .lte("effective_from", format(date, "yyyy-MM-dd"))
       .order("effective_from", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
@@ -138,6 +148,18 @@ export async function getTodayData(dateValue?: string) {
       .from("exercises")
       .select("id,name,primary_muscle,equipment")
       .eq("user_id", uid),
+    supabase
+      .from("meal_plan_templates")
+      .select("id,weekday,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
+      .eq("user_id", uid)
+      .eq("is_active", true)
+      .lte("active_from", endDate),
+    supabase
+      .from("meal_plan_template_skips")
+      .select("template_id,entry_date")
+      .eq("user_id", uid)
+      .gte("entry_date", startDate)
+      .lte("entry_date", endDate),
   ]);
   checkQueries(
     planResult,
@@ -150,6 +172,8 @@ export async function getTodayData(dateValue?: string) {
     foodsResult,
     planExerciseResult,
     exerciseResult,
+    mealTemplatesResult,
+    mealTemplateSkipsResult,
   );
   const plan = planResult.data;
   let planDays: any[] = [];
@@ -168,6 +192,59 @@ export async function getTodayData(dateValue?: string) {
     activeDayIds.has(item.day_id),
   );
   const planExercises = rows(exerciseResult.data);
+  const localToday = localAppDate();
+  const autoSchedule = new Map<string, any>();
+  let autoRearrange = false;
+  if (plan && localToday >= startDate && localToday <= endDate && planDays.length) {
+    const { data: latestWorkout, error: latestWorkoutError } = await supabase
+      .from("workout_sessions")
+      .select("id,started_at,plan_day_id")
+      .eq("user_id", uid)
+      .eq("plan_id", plan.id)
+      .not("finished_at", "is", null)
+      .is("archived_at", null)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    checkQueries({ error: latestWorkoutError });
+    const lastWorkoutDate = latestWorkout?.started_at
+      ? format(parseISO(latestWorkout.started_at), "yyyy-MM-dd")
+      : null;
+    const pauseDays = lastWorkoutDate
+      ? differenceInCalendarDays(parseISO(localToday), parseISO(lastWorkoutDate))
+      : 0;
+    const orderedDays = [...planDays].sort((a, b) => a.day_order - b.day_order);
+    const lastIndex = orderedDays.findIndex((day) => day.id === latestWorkout?.plan_day_id);
+    const nextIndex = lastIndex >= 0 ? (lastIndex + 1) % orderedDays.length : 0;
+    const gapBetween = (from: any, to: any) =>
+      from.weekday == null || to.weekday == null
+        ? Math.max(2, Math.round(7 / orderedDays.length))
+        : ((to.weekday - from.weekday + 7) % 7) || 7;
+    const shiftedFromTemplate = Boolean(
+      latestWorkout &&
+      orderedDays[lastIndex]?.weekday != null &&
+      ((parseISO(lastWorkoutDate!).getDay() + 6) % 7) !== orderedDays[lastIndex].weekday,
+    );
+    const hasOpenSession = rows(sessionsResult.data).some((session) => !session.finished_at);
+    if ((pauseDays >= 3 || shiftedFromTemplate) && !hasOpenSession) {
+      autoRearrange = true;
+      let planIndex = nextIndex;
+      let scheduleDate = pauseDays >= 3 || !lastWorkoutDate
+        ? parseISO(localToday)
+        : addDays(parseISO(lastWorkoutDate), gapBetween(orderedDays[Math.max(lastIndex, 0)], orderedDays[planIndex]));
+      if (scheduleDate < parseISO(localToday)) scheduleDate = parseISO(localToday);
+      while (scheduleDate <= end) {
+        const scheduled = orderedDays[planIndex];
+        const key = format(scheduleDate, "yyyy-MM-dd");
+        autoSchedule.set(key, { ...scheduled, auto_rescheduled: true });
+        const current = orderedDays[planIndex];
+        const next = orderedDays[(planIndex + 1) % orderedDays.length];
+        const gap = gapBetween(current, next);
+        scheduleDate = addDays(scheduleDate, gap);
+        planIndex = (planIndex + 1) % orderedDays.length;
+      }
+    }
+  }
   const days = Array.from({ length: 7 }, (_, index) => {
     const dayDate = new Date(start);
     dayDate.setDate(start.getDate() + index);
@@ -175,10 +252,26 @@ export async function getTodayData(dateValue?: string) {
     const dayMeals = rows(mealsResult.data).filter(
       (item: any) => item.entry_date === key,
     );
+    const weekday = (dayDate.getDay() + 6) % 7;
+    const consumedTemplateIds = new Set(dayMeals.map((item: any) => item.source_template_id).filter(Boolean));
+    const skippedTemplateIds = new Set(rows(mealTemplateSkipsResult.data).filter((skip: any) => skip.entry_date === key).map((skip: any) => skip.template_id));
+    const recurringMeals = rows(mealTemplatesResult.data)
+      .filter((template: any) => template.weekday === weekday && template.active_from <= key && !consumedTemplateIds.has(template.id) && !skippedTemplateIds.has(template.id))
+      .map((template: any) => ({
+        ...template,
+        id: `template-${template.id}-${key}`,
+        template_id: template.id,
+        entry_date: key,
+        is_template: true,
+        is_planned: true,
+        review_status: "approved",
+        notes: "Wiederkehrender Wochenplan",
+      }));
+    const mealsForDay = [...dayMeals, ...recurringMeals];
     const actual = dayMeals.filter(
       (item: any) => !item.is_planned && item.review_status === "approved",
     );
-    const planned = dayMeals.filter(
+    const planned = mealsForDay.filter(
       (item: any) => item.is_planned && item.review_status !== "denied",
     );
     const totals = (items: any[]) =>
@@ -191,7 +284,6 @@ export async function getTodayData(dateValue?: string) {
         }),
         { kcal: 0, protein: 0, carbs: 0, fat: 0 },
       );
-    const weekday = (dayDate.getDay() + 6) % 7;
     const session = rows(sessionsResult.data).filter(
       (item: any) => format(parseISO(item.started_at), "yyyy-MM-dd") === key,
     );
@@ -199,11 +291,12 @@ export async function getTodayData(dateValue?: string) {
       date: key,
       label: format(dayDate, "EEE"),
       shortDate: format(dayDate, "MMM d"),
-      meals: dayMeals,
+      meals: mealsForDay,
       actual: totals(actual),
       planned: totals(planned),
       planDay: (() => {
-        const day = planDays.find((item) => item.weekday === weekday) ?? null;
+        const regular = planDays.find((item) => item.weekday === weekday) ?? null;
+        const day = autoSchedule.get(key) ?? (autoRearrange && key >= localToday ? null : regular);
         return day
           ? {
               ...day,
@@ -253,10 +346,10 @@ export async function getNutritionData(dateValue?: string) {
       targets: [],
       date: dateValue ?? null,
     };
-  const date = isDate(dateValue) ? dateValue : format(new Date(), "yyyy-MM-dd");
+  const date = isDate(dateValue) ? dateValue : localAppDate();
   const supabase = await createClient();
   const uid = ctx.user.id;
-  const [entries, foods, targets, settings] = await Promise.all([
+  const [entries, foods, targets, settings, recurring, skipped] = await Promise.all([
     supabase
       .from("meal_entries")
       .select("*")
@@ -276,17 +369,45 @@ export async function getNutritionData(dateValue?: string) {
       .eq("user_id", uid)
       .lte("effective_from", date)
       .order("effective_from", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1),
     supabase
       .from("notification_settings")
       .select("user_id")
       .eq("user_id", uid)
       .maybeSingle(),
+    supabase
+      .from("meal_plan_templates")
+      .select("id,weekday,meal_slot,name,amount_grams,kcal,protein_g,carbs_g,fat_g,active_from")
+      .eq("user_id", uid)
+      .eq("is_active", true)
+      .lte("active_from", date),
+    supabase
+      .from("meal_plan_template_skips")
+      .select("template_id")
+      .eq("user_id", uid)
+      .eq("entry_date", date),
   ]);
-  checkQueries(entries, foods, targets, settings);
+  checkQueries(entries, foods, targets, settings, recurring, skipped);
+  const savedEntries = rows(entries.data);
+  const weekday = (parseISO(date).getDay() + 6) % 7;
+  const consumedTemplateIds = new Set(savedEntries.map((item: any) => item.source_template_id).filter(Boolean));
+  const skippedTemplateIds = new Set(rows(skipped.data).map((item: any) => item.template_id));
+  const recurringEntries = rows(recurring.data)
+    .filter((template: any) => template.weekday === weekday && !consumedTemplateIds.has(template.id) && !skippedTemplateIds.has(template.id))
+    .map((template: any) => ({
+      ...template,
+      id: `template-${template.id}-${date}`,
+      template_id: template.id,
+      entry_date: date,
+      is_template: true,
+      is_planned: true,
+      review_status: "approved",
+      notes: "Wiederkehrender Wochenplan",
+    }));
   return {
     context: ctx,
-    entries: rows(entries.data),
+    entries: [...savedEntries, ...recurringEntries],
     foods: rows(foods.data),
     targets: rows(targets.data),
     date,
@@ -513,7 +634,8 @@ export async function getInsightsData(fromValue?: string, toValue?: string) {
         .select("*")
         .eq("user_id", uid)
         .lte("effective_from", to)
-        .order("effective_from"),
+        .order("effective_from")
+        .order("created_at"),
       supabase
         .from("profiles")
         .select("full_name,goal,weight_kg,height_cm,birth_date")
@@ -572,6 +694,7 @@ export async function getAccountData() {
       .select("*")
       .eq("user_id", uid)
       .order("effective_from", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(20),
     supabase
       .from("notification_settings")
