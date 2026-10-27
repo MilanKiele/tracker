@@ -148,12 +148,36 @@ export async function applyAiAction(input: unknown) {
   }
 
   if (action.type === "nutrition_target") {
-    const target = withoutType(action);
+    const { data: current, error: currentError } = await db
+      .from("nutrition_targets")
+      .select("kcal,protein_g,carbs_g,fat_g")
+      .eq("user_id", user.id)
+      .lte("effective_from", action.effective_from)
+      .order("effective_from", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    check(currentError);
+    const previous = current as Record<string, unknown> | null;
+    const kcal = action.kcal ?? Number(previous?.kcal ?? 2000);
+    const existingProtein = Number(previous?.protein_g ?? kcal * 0.25 / 4);
+    const existingCarbs = Number(previous?.carbs_g ?? kcal * 0.5 / 4);
+    const existingFat = Number(previous?.fat_g ?? kcal * 0.25 / 9);
+    const previousEnergy = existingProtein * 4 + existingCarbs * 4 + existingFat * 9;
+    const scale = action.kcal !== undefined && ![action.protein_g, action.carbs_g, action.fat_g].some((value) => value !== undefined)
+      ? kcal / (previousEnergy || kcal)
+      : 1;
+    const target = {
+      effective_from: action.effective_from,
+      kcal,
+      protein_g: action.protein_g ?? existingProtein * scale,
+      carbs_g: action.carbs_g ?? existingCarbs * scale,
+      fat_g: action.fat_g ?? existingFat * scale,
+    };
     const { error } = await db.from("nutrition_targets").insert({
       ...target,
       user_id: user.id,
       is_manual: true,
-      calculation: { source: "KI-Vorschlag, vom Nutzer bestätigt" },
+      calculation: { source: "KI-Vorschlag, vom Nutzer bestätigt", partial_update_preserved_existing_macros: true },
     });
     check(error);
   }

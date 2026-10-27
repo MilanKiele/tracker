@@ -26,7 +26,7 @@ import { fmt, slots, today, useFeedback } from "./ui";
 
 type Mode = "plan" | "food";
 const AiContext = createContext<{
-  openAi: (mode: Mode, date?: string) => void;
+  openAi: (mode: Mode, date?: string, prompt?: string) => void;
 }>({ openAi: () => {} });
 export const useAi = () => useContext(AiContext);
 export function AiProvider({ children }: { children: React.ReactNode }) {
@@ -34,8 +34,8 @@ export function AiProvider({ children }: { children: React.ReactNode }) {
   return (
     <AiContext
       value={{
-        openAi: (mode, date) =>
-          router.push(`/assistant?mode=${mode}${date ? `&date=${date}` : ""}`),
+        openAi: (mode, date, prompt) =>
+          router.push(`/assistant?mode=${mode}${date ? `&date=${date}` : ""}${prompt ? `&prompt=${encodeURIComponent(prompt)}` : ""}`),
       }}
     >
       {children}
@@ -81,9 +81,11 @@ type ChatNotification = { id: string; title: string; body: string; created_at: s
 export function AssistantWorkspace({
   initialMode,
   initialDate,
+  initialPrompt,
 }: {
   initialMode: Mode;
   initialDate: string;
+  initialPrompt?: string;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeMode, setActiveMode] = useState(initialMode);
@@ -99,7 +101,7 @@ export function AssistantWorkspace({
   const [savingPhoto, setSavingPhoto] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState("");
   const [photoError, setPhotoError] = useState("");
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialPrompt ?? "");
   const [image, setImage] = useState("");
   const [result, setResult] = useState<AiResult | null>(null);
   const [busy, setBusy] = useState(false);

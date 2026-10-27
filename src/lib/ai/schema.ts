@@ -117,11 +117,11 @@ export const aiAction = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("nutrition_target"),
     effective_from: dateSchema,
-    kcal: z.number().int().min(500).max(10000),
-    protein_g: z.number().min(0).max(1000),
-    carbs_g: z.number().min(0).max(1000),
-    fat_g: z.number().min(0).max(1000),
-  }),
+    kcal: z.number().int().min(500).max(10000).optional(),
+    protein_g: z.number().min(0).max(1000).optional(),
+    carbs_g: z.number().min(0).max(1000).optional(),
+    fat_g: z.number().min(0).max(1000).optional(),
+  }).refine((action) => Object.keys(action).some((key) => key !== "type" && key !== "effective_from")),
   z.object({
     type: z.literal("meal_update"),
     meal_id: z.string().uuid(),

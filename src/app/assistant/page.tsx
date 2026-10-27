@@ -6,7 +6,7 @@ import { requireReadyContext } from "@/lib/data";
 export default async function AssistantPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; date?: string }>;
+  searchParams: Promise<{ mode?: string; date?: string; prompt?: string }>;
 }) {
   const [context, params] = await Promise.all([
     requireReadyContext(),
@@ -19,7 +19,7 @@ export default async function AssistantPage({
     : "";
   return (
     <AppShell profile={context.profile} email={context.user?.email}>
-      <AssistantWorkspace initialMode={mode} initialDate={date} />
+      <AssistantWorkspace initialMode={mode} initialDate={date} initialPrompt={params.prompt?.slice(0, 500)} />
     </AppShell>
   );
 }
