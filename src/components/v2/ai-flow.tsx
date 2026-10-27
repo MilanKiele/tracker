@@ -7,6 +7,7 @@ import {
   Camera,
   Check,
   History,
+  Images,
   ImagePlus,
   LoaderCircle,
   MessagesSquare,
@@ -87,6 +88,7 @@ export async function resizePhoto(file: File): Promise<string> {
 
 type Message = { role: "user" | "assistant"; content: string; display: string };
 type Conversation = { id: string; title: string; mode: Mode; updated_at: string };
+type SavedPhoto = { id: string; label: string; created_at: string; url: string };
 function AiDialog({
   mode,
   initialDate,
@@ -102,6 +104,13 @@ function AiDialog({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showConversations, setShowConversations] = useState(true);
   const [loadingConversations, setLoadingConversations] = useState(true);
+  const [savedPhotos, setSavedPhotos] = useState<SavedPhoto[]>([]);
+  const [photosLoaded, setPhotosLoaded] = useState(false);
+  const [showSavedPhotos, setShowSavedPhotos] = useState(false);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const [deletingPhotoId, setDeletingPhotoId] = useState("");
+  const [photoError, setPhotoError] = useState("");
   const [question, setQuestion] = useState("");
   const [image, setImage] = useState("");
   const [result, setResult] = useState<AiResult | null>(null);
@@ -169,6 +178,76 @@ function AiDialog({
       setLoadingConversations(false);
     }
   }
+  async function refreshPhotos() {
+    setLoadingPhotos(true);
+    setPhotoError("");
+    try {
+      const response = await fetch("/api/assistant/photos", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Fotoarchiv nicht verfügbar.");
+      setSavedPhotos(data.photos ?? []);
+      setPhotosLoaded(true);
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Fotoarchiv nicht verfügbar.");
+    } finally {
+      setLoadingPhotos(false);
+    }
+  }
+  async function archivePhoto(imageData: string) {
+    setSavingPhoto(true);
+    setPhotoError("");
+    try {
+      const response = await fetch("/api/assistant/photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: imageData,
+          label: `Essensfoto · ${new Date().toLocaleDateString("de-DE")}`,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Foto konnte nicht gespeichert werden.");
+      if (data.photo?.url) {
+        setSavedPhotos((items) => [data.photo, ...items.filter((item) => item.id !== data.photo.id)].slice(0, 24));
+      }
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Foto konnte nicht gespeichert werden.");
+    } finally {
+      setSavingPhoto(false);
+    }
+  }
+  async function selectSavedPhoto(photo: SavedPhoto) {
+    setSavingPhoto(true);
+    setPhotoError("");
+    try {
+      const response = await fetch(`/api/assistant/photos?id=${photo.id}`, { cache: "no-store" });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Foto konnte nicht geladen werden.");
+      }
+      const blob = await response.blob();
+      setImage(await resizePhoto(new File([blob], "essensfoto.jpg", { type: "image/jpeg" })));
+      setShowSavedPhotos(false);
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Foto konnte nicht geladen werden.");
+    } finally {
+      setSavingPhoto(false);
+    }
+  }
+  async function removeSavedPhoto(id: string) {
+    setDeletingPhotoId(id);
+    setPhotoError("");
+    try {
+      const response = await fetch(`/api/assistant/photos?id=${id}`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Foto konnte nicht gelöscht werden.");
+      setSavedPhotos((items) => items.filter((item) => item.id !== id));
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Foto konnte nicht gelöscht werden.");
+    } finally {
+      setDeletingPhotoId("");
+    }
+  }
   async function ask(history: Message[]) {
     setBusy(true);
     setError("");
@@ -217,8 +296,10 @@ function AiDialog({
   async function photo(file?: File) {
     if (!file) return;
     try {
-      setImage(await resizePhoto(file));
+      const imageData = await resizePhoto(file);
+      setImage(imageData);
       setError("");
+      void archivePhoto(imageData);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Foto nicht lesbar.");
     }
@@ -530,7 +611,52 @@ function AiDialog({
               >
                 <ImagePlus size={19} />
               </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-small"
+                disabled={savingPhoto}
+                onClick={() => {
+                  const next = !showSavedPhotos;
+                  setShowSavedPhotos(next);
+                  if (next && !photosLoaded) void refreshPhotos();
+                }}
+              >
+                <Images size={15} /> Mein Fotoarchiv{photosLoaded && savedPhotos.length ? ` · ${savedPhotos.length}` : ""}
+              </button>
             </div>
+            {savingPhoto && <small className="photo-status">Foto wird gespeichert oder geladen …</small>}
+            {photoError && <div className="error-box" role="alert">{photoError}</div>}
+            {showSavedPhotos && (
+              <section className="saved-photo-library" aria-label="Gespeicherte Essensfotos">
+                <div className="saved-photo-heading">
+                  <b>Zuletzt verwendete Fotos</b>
+                  <small>Antippen zum erneuten Analysieren</small>
+                </div>
+                {loadingPhotos && <small>Fotoarchiv wird geladen …</small>}
+                {!loadingPhotos && savedPhotos.length === 0 && !photoError && (
+                  <small>Deine ausgewählten Fotos erscheinen hier.</small>
+                )}
+                <div className="saved-photo-grid">
+                  {savedPhotos.map((saved) => (
+                    <div className="saved-photo-card" key={saved.id}>
+                      <button type="button" onClick={() => void selectSavedPhoto(saved)} disabled={savingPhoto}>
+                        <img src={saved.url} alt={saved.label} />
+                        <span>{saved.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="saved-photo-delete"
+                        aria-label={`${saved.label} löschen`}
+                        disabled={deletingPhotoId === saved.id}
+                        onClick={() => void removeSavedPhoto(saved.id)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </>
         )}
         <div className="composer-input">
@@ -559,8 +685,8 @@ function AiDialog({
           </button>
         </div>
         <small className="ai-privacy">
-          Nachrichten werden in deinem privaten Konto gespeichert. Fotos gehen
-          an OpenRouter, werden hier aber nicht gespeichert.
+          Gespräche und Essensfotos bleiben in deinem privaten Konto. Fotos
+          werden zur Analyse an OpenRouter gesendet.
         </small>
       </form>
     </Modal>
