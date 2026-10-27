@@ -17,7 +17,7 @@ function check(error: { message: string; code?: string } | null) {
   if (!error) return;
   if (["PGRST202", "PGRST204", "42703", "42P01"].includes(error.code ?? ""))
     throw new Error(
-      "Datenbank-Update erforderlich: Migration 004 in Supabase ausführen.",
+      "Datenbank-Update erforderlich: supabase/setup.sql im Supabase SQL Editor ausführen.",
     );
   throw new Error(error.message);
 }

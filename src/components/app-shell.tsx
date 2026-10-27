@@ -20,11 +20,11 @@ import { FeedbackProvider } from "@/components/v2/ui";
 import { AiProvider, useAi } from "@/components/v2/ai-flow";
 
 const nav = [
-  { href: "/", label: "Overview", icon: CalendarDays },
-  { href: "/train", label: "Train", icon: Dumbbell },
-  { href: "/nutrition", label: "Nutrition", icon: Apple },
-  { href: "/body", label: "Body", icon: Weight },
-  { href: "/insights", label: "Insights", icon: BarChart3 },
+  { href: "/", label: "Heute", icon: CalendarDays },
+  { href: "/train", label: "Training", icon: Dumbbell },
+  { href: "/nutrition", label: "Essen", icon: Apple },
+  { href: "/body", label: "Körper", icon: Weight },
+  { href: "/insights", label: "Einblicke", icon: BarChart3 },
 ];
 export function AppShell({
   children,
@@ -75,7 +75,7 @@ function Shell({
           everwell<span className="brand-dot">.</span>
         </Link>
         <div className="sidebar-label">DEIN ALLTAG. DEIN RHYTHMUS.</div>
-        <nav className="side-nav">
+        <nav className="side-nav" aria-label="Hauptnavigation">
           {nav.map(({ href, label, icon: Icon }) => (
             <Link
               href={href}
@@ -138,6 +138,13 @@ function Shell({
             >
               <Bell size={19} />
             </Link>
+          <button
+            className="icon-btn mobile-ai-btn"
+            aria-label="KI-Assistent öffnen"
+            onClick={() => openAi(path === "/train" ? "plan" : "food")}
+          >
+            <Sparkles size={19} />
+          </button>
             <Link href="/account" className="avatar" aria-label="Konto öffnen">
               {initials || <UserRound size={16} />}
             </Link>
@@ -152,7 +159,7 @@ function Shell({
           <Link href="/account">Einstellungen</Link>
         </footer>
       </div>
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" aria-label="Hauptnavigation">
         {nav.map(({ href, label, icon: Icon }) => (
           <Link
             href={href}

@@ -146,7 +146,7 @@ export function BodyPage({ data }: { data: any }) {
           </div>
           <section className="card">
             <SectionTitle
-              title="Deine Ziele"
+              title="Deine Zielmaße"
               action={
                 <button
                   className="icon-btn"
@@ -184,7 +184,7 @@ export function BodyPage({ data }: { data: any }) {
                         {fields.find(([k]) => k === g.metric)?.[1] || g.metric}
                       </b>
                       <p>
-                        {actual != null ? fmt(actual, 1) : "—"} →{" "}
+                        {actual != null ? fmt(actual, 1) : "Noch kein Messwert"} →{" "}
                         {fmt(g.target_value, 1)}
                         {g.target_date
                           ? ` · bis ${parseISO(g.target_date).toLocaleDateString("de-DE")}`
@@ -214,7 +214,7 @@ export function BodyPage({ data }: { data: any }) {
                   </button>
                 }
               >
-                Was möchtest du erreichen?
+                Lege deine persönlichen Wunschwerte fest – zum Beispiel für Taille, Brust oder Gewicht. Es gibt keine pauschalen Idealmaße.
               </Empty>
             )}
           </section>

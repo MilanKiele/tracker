@@ -36,7 +36,7 @@ function checkQueries(
   if (error)
     throw new Error(
       ["42703", "42P01", "PGRST202"].includes(error.code ?? "")
-        ? "Datenbank-Update erforderlich: Migration 004 in Supabase ausführen."
+        ? "Datenbank-Update erforderlich: supabase/setup.sql im Supabase SQL Editor ausführen."
         : "Daten konnten nicht geladen werden. Bitte erneut versuchen.",
     );
 }
@@ -68,6 +68,8 @@ export async function getTodayData(dateValue?: string) {
     waterResult,
     targetResult,
     foodsResult,
+    planExerciseResult,
+    exerciseResult,
   ] = await Promise.all([
     supabase
       .from("training_plans")
@@ -127,6 +129,15 @@ export async function getTodayData(dateValue?: string) {
       .eq("user_id", uid)
       .is("archived_at", null)
       .order("name"),
+    supabase
+      .from("plan_exercises")
+      .select("*")
+      .eq("user_id", uid)
+      .order("exercise_order"),
+    supabase
+      .from("exercises")
+      .select("id,name,primary_muscle,equipment")
+      .eq("user_id", uid),
   ]);
   checkQueries(
     planResult,
@@ -137,41 +148,26 @@ export async function getTodayData(dateValue?: string) {
     waterResult,
     targetResult,
     foodsResult,
+    planExerciseResult,
+    exerciseResult,
   );
   const plan = planResult.data;
   let planDays: any[] = [];
   if (plan) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("plan_days")
       .select("id,name,day_order,weekday,is_rest_day")
       .eq("user_id", uid)
       .eq("plan_id", plan.id)
       .order("day_order");
+    checkQueries({ error });
     planDays = rows(data);
   }
-  let planExerciseRows: any[] = [];
-  if (planDays.length) {
-    const { data } = await supabase
-      .from("plan_exercises")
-      .select("*")
-      .eq("user_id", uid)
-      .in(
-        "day_id",
-        planDays.map((item) => item.id),
-      )
-      .order("exercise_order");
-    planExerciseRows = rows(data);
-  }
-  const exerciseIds = [
-    ...new Set(planExerciseRows.map((item) => item.exercise_id)),
-  ];
-  const { data: planExercises } = exerciseIds.length
-    ? await supabase
-        .from("exercises")
-        .select("id,name,primary_muscle,equipment")
-        .eq("user_id", uid)
-        .in("id", exerciseIds)
-    : { data: [] };
+  const activeDayIds = new Set(planDays.map((day) => day.id));
+  const planExerciseRows = rows(planExerciseResult.data).filter((item) =>
+    activeDayIds.has(item.day_id),
+  );
+  const planExercises = rows(exerciseResult.data);
   const days = Array.from({ length: 7 }, (_, index) => {
     const dayDate = new Date(start);
     dayDate.setDate(start.getDate() + index);
@@ -309,7 +305,15 @@ export async function getTrainingData() {
     };
   const supabase = await createClient();
   const uid = ctx.user.id;
-  const [plans, exercises, sessions, activeSessions] = await Promise.all([
+  const [
+    plans,
+    exercises,
+    sessions,
+    activeSessions,
+    days,
+    planExerciseData,
+    records,
+  ] = await Promise.all([
     supabase
       .from("training_plans")
       .select("*")
@@ -336,34 +340,38 @@ export async function getTrainingData() {
       .is("archived_at", null)
       .is("finished_at", null)
       .order("started_at", { ascending: false }),
+    supabase
+      .from("plan_days")
+      .select("*")
+      .eq("user_id", uid)
+      .order("day_order"),
+    supabase
+      .from("plan_exercises")
+      .select("*")
+      .eq("user_id", uid)
+      .order("exercise_order"),
+    supabase
+      .from("personal_records")
+      .select("*")
+      .eq("user_id", uid)
+      .order("achieved_at", { ascending: false })
+      .limit(40),
   ]);
-  checkQueries(plans, exercises, sessions, activeSessions);
+  checkQueries(
+    plans,
+    exercises,
+    sessions,
+    activeSessions,
+    days,
+    planExerciseData,
+    records,
+  );
   const planRows = rows(plans.data);
   const exerciseRows = rows(exercises.data);
-  const { data: days } = planRows.length
-    ? await supabase
-        .from("plan_days")
-        .select("*")
-        .eq("user_id", uid)
-        .in(
-          "plan_id",
-          planRows.map((p: any) => p.id),
-        )
-        .order("day_order")
-    : { data: [] };
-  const dayRows = rows(days);
-  const { data: planExerciseData } = dayRows.length
-    ? await supabase
-        .from("plan_exercises")
-        .select("*")
-        .eq("user_id", uid)
-        .in(
-          "day_id",
-          dayRows.map((d: any) => d.id),
-        )
-        .order("exercise_order")
-    : { data: [] };
-  const items = rows(planExerciseData).map((item: any) => ({
+  const planIds = new Set(planRows.map((plan: any) => plan.id));
+  const dayRows = rows(days.data).filter((day: any) => planIds.has(day.plan_id));
+  const dayIds = new Set(dayRows.map((day: any) => day.id));
+  const items = rows(planExerciseData.data).filter((item: any) => dayIds.has(item.day_id)).map((item: any) => ({
     ...item,
     exercise:
       exerciseRows.find((exercise: any) => exercise.id === item.exercise_id) ??
@@ -378,12 +386,6 @@ export async function getTrainingData() {
         exercises: items.filter((item: any) => item.day_id === day.id),
       })),
   }));
-  const { data: records } = await supabase
-    .from("personal_records")
-    .select("*")
-    .eq("user_id", uid)
-    .order("achieved_at", { ascending: false })
-    .limit(40);
   const sessionRows = [
     ...rows(activeSessions.data),
     ...rows(sessions.data).filter(
@@ -391,33 +393,23 @@ export async function getTrainingData() {
     ),
   ];
   const sessionIds = sessionRows.map((session: any) => session.id);
-  const { data: loggedExercises } = sessionIds.length
+  const { data: loggedExercises, error: logError } = sessionIds.length
     ? await supabase
         .from("workout_exercises")
-        .select("*")
+        .select("*,workout_sets(*)")
         .eq("user_id", uid)
         .in("session_id", sessionIds)
-    : { data: [] };
+    : { data: [], error: null };
+  checkQueries({ error: logError });
   const exerciseLogs = rows(loggedExercises);
-  const { data: setRows } = exerciseLogs.length
-    ? await supabase
-        .from("workout_sets")
-        .select("*")
-        .eq("user_id", uid)
-        .in(
-          "workout_exercise_id",
-          exerciseLogs.map((item: any) => item.id),
-        )
-        .order("set_number")
-    : { data: [] };
   const history = sessionRows.map((session: any) => ({
     ...session,
     exercises: exerciseLogs
       .filter((item: any) => item.session_id === session.id)
       .map((item: any) => ({
         ...item,
-        sets: rows(setRows).filter(
-          (set: any) => set.workout_exercise_id === item.id,
+        sets: rows(item.workout_sets).sort(
+          (left: any, right: any) => left.set_number - right.set_number,
         ),
       })),
   }));
@@ -426,7 +418,7 @@ export async function getTrainingData() {
     plans: hydratedPlans,
     exercises: exerciseRows,
     sessions: history,
-    records: rows(records),
+    records: rows(records.data),
     activePlan: hydratedPlans.find((plan: any) => plan.is_active) ?? null,
   };
 }
@@ -436,7 +428,7 @@ export async function getBodyData() {
     return { context: ctx, measurements: [], goals: [], milestones: [] };
   const supabase = await createClient();
   const uid = ctx.user.id;
-  const [measurements, goals] = await Promise.all([
+  const [measurements, goals, milestones] = await Promise.all([
     supabase
       .from("measurements")
       .select("*")
@@ -449,25 +441,22 @@ export async function getBodyData() {
       .eq("user_id", uid)
       .is("archived_at", null)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("goal_milestones")
+      .select("*")
+      .eq("user_id", uid)
+      .order("due_on"),
   ]);
-  checkQueries(measurements, goals);
+  checkQueries(measurements, goals, milestones);
   const goalRows = rows(goals.data);
-  const { data: milestones } = goalRows.length
-    ? await supabase
-        .from("goal_milestones")
-        .select("*")
-        .eq("user_id", uid)
-        .in(
-          "goal_id",
-          goalRows.map((goal: any) => goal.id),
-        )
-        .order("due_on")
-    : { data: [] };
+  const goalIds = new Set(goalRows.map((goal: any) => goal.id));
   return {
     context: ctx,
     measurements: rows(measurements.data),
     goals: goalRows,
-    milestones: rows(milestones),
+    milestones: rows(milestones.data).filter((item: any) =>
+      goalIds.has(item.goal_id),
+    ),
   };
 }
 export async function getInsightsData(fromValue?: string, toValue?: string) {
@@ -494,7 +483,7 @@ export async function getInsightsData(fromValue?: string, toValue?: string) {
       : rawFrom;
   const supabase = await createClient();
   const uid = ctx.user.id;
-  const [sessions, meals, measurements, targets, profile, journal, water] =
+  const [sessions, meals, measurements, targets, profile, journal, water, yearSessions] =
     await Promise.all([
       supabase
         .from("workout_sessions")
@@ -542,17 +531,15 @@ export async function getInsightsData(fromValue?: string, toValue?: string) {
         .eq("user_id", uid)
         .gte("entry_date", from)
         .lte("entry_date", to),
+      supabase
+        .from("workout_sessions")
+        .select("started_at,finished_at,total_volume")
+        .eq("user_id", uid)
+        .gte("started_at", `${to.slice(0, 4)}-01-01T00:00:00`)
+        .lte("started_at", `${to.slice(0, 4)}-12-31T23:59:59`)
+        .is("archived_at", null),
     ]);
-  checkQueries(sessions, meals, measurements, targets, profile, journal, water);
-  const yearStart = `${to.slice(0, 4)}-01-01`,
-    yearEnd = `${to.slice(0, 4)}-12-31`;
-  const { data: yearSessions } = await supabase
-    .from("workout_sessions")
-    .select("started_at,finished_at,total_volume")
-    .eq("user_id", uid)
-    .gte("started_at", `${yearStart}T00:00:00`)
-    .lte("started_at", `${yearEnd}T23:59:59`)
-    .is("archived_at", null);
+  checkQueries(sessions, meals, measurements, targets, profile, journal, water, yearSessions);
   return {
     context: ctx,
     sessions: rows(sessions.data),
@@ -562,7 +549,7 @@ export async function getInsightsData(fromValue?: string, toValue?: string) {
     profile: profile.data,
     journal: rows(journal.data),
     water: rows(water.data),
-    yearSessions: rows(yearSessions),
+    yearSessions: rows(yearSessions.data),
     from,
     to,
   };

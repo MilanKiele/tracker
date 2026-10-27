@@ -6,8 +6,11 @@ import { useRouter } from "next/navigation";
 import {
   Camera,
   Check,
+  History,
   ImagePlus,
   LoaderCircle,
+  MessagesSquare,
+  Plus,
   Send,
   Sparkles,
   X,
@@ -83,6 +86,7 @@ export async function resizePhoto(file: File): Promise<string> {
 }
 
 type Message = { role: "user" | "assistant"; content: string; display: string };
+type Conversation = { id: string; title: string; mode: Mode; updated_at: string };
 function AiDialog({
   mode,
   initialDate,
@@ -93,6 +97,11 @@ function AiDialog({
   onClose: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeMode, setActiveMode] = useState(mode);
+  const [conversationId, setConversationId] = useState("");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [showConversations, setShowConversations] = useState(true);
+  const [loadingConversations, setLoadingConversations] = useState(true);
   const [question, setQuestion] = useState("");
   const [image, setImage] = useState("");
   const [result, setResult] = useState<AiResult | null>(null);
@@ -111,6 +120,55 @@ function AiDialog({
   const router = useRouter();
   const { notify } = useFeedback();
   useEffect(() => () => controller.current?.abort(), []);
+  async function refreshConversations() {
+    try {
+      const response = await fetch("/api/assistant", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Verläufe nicht verfügbar.");
+      setConversations(data.conversations ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Verläufe nicht verfügbar.");
+    } finally {
+      setLoadingConversations(false);
+    }
+  }
+  useEffect(() => {
+    void Promise.resolve().then(refreshConversations);
+  }, []);
+  function startNewConversation() {
+    setConversationId("");
+    setMessages([]);
+    setResult(null);
+    setImage("");
+    setError("");
+    setActiveMode(mode);
+    setShowConversations(false);
+  }
+  async function openConversation(conversation: Conversation) {
+    setLoadingConversations(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/assistant?conversation_id=${conversation.id}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Gespräch konnte nicht geladen werden.");
+      setConversationId(conversation.id);
+      setActiveMode(data.conversation.mode);
+      setMessages((data.messages ?? []).map((item: { role: Message["role"]; content: string }) => {
+        let display = item.content;
+        if (item.role === "assistant") {
+          try { display = JSON.parse(item.content).message ?? item.content; } catch { /* older plain text */ }
+        }
+        return { role: item.role, content: item.content, display };
+      }));
+      setResult(null);
+      setImage("");
+      setShowConversations(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gespräch konnte nicht geladen werden.");
+    } finally {
+      setLoadingConversations(false);
+    }
+  }
   async function ask(history: Message[]) {
     setBusy(true);
     setError("");
@@ -120,7 +178,8 @@ function AiDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode,
+          mode: activeMode,
+          conversation_id: conversationId || undefined,
           messages: history
             .slice(-10)
             .map(({ role, content }) => ({ role, content })),
@@ -132,6 +191,7 @@ function AiDialog({
       if (!response.ok)
         throw new Error(data.error || "Die KI ist gerade nicht erreichbar.");
       const next = data.result as AiResult;
+      if (data.conversation_id) setConversationId(data.conversation_id);
       setResult(next);
       mutation.current = crypto.randomUUID();
       setMessages([
@@ -146,6 +206,7 @@ function AiDialog({
         setPortions(next.foods.map(() => 1));
         setIncluded(next.foods.map(() => true));
       }
+      void refreshConversations();
     } catch (e) {
       if (!(e instanceof Error && e.name === "AbortError"))
         setError(e instanceof Error ? e.message : "Verbindung fehlgeschlagen.");
@@ -216,7 +277,7 @@ function AiDialog({
   }
   return (
     <Modal
-      title={mode === "plan" ? "Dein Plan. Mit KI." : "Was gibt’s zu essen?"}
+      title={activeMode === "plan" ? "Trainingscoach" : "Ernährungscoach"}
       onClose={onClose}
       wide
     >
@@ -225,14 +286,35 @@ function AiDialog({
           <Sparkles size={22} />
         </span>
         <p>
-          {mode === "plan"
+          {activeMode === "plan"
             ? "Sag, wie du trainieren möchtest."
             : "Foto aufnehmen oder deine Mahlzeit beschreiben."}
         </p>
       </div>
+      <div className="chat-tools">
+        <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowConversations(!showConversations)}>
+          <History size={15} /> Gespräche {conversations.length ? `· ${conversations.length}` : ""}
+        </button>
+        <button type="button" className="btn btn-secondary btn-small" onClick={startNewConversation}>
+          <Plus size={15} /> Neuer Chat
+        </button>
+      </div>
+      {showConversations && (
+        <section className="conversation-list" aria-label="Frühere Gespräche">
+          <b>Letzte Gespräche</b>
+          {loadingConversations && <small>Wird geladen …</small>}
+          {!loadingConversations && !conversations.length && <small>Noch keine gespeicherten Gespräche.</small>}
+          {conversations.map((conversation) => (
+            <button type="button" key={conversation.id} className="conversation-item" onClick={() => void openConversation(conversation)}>
+              <MessagesSquare size={15} />
+              <span><b>{conversation.title}</b><small>{conversation.mode === "plan" ? "Training" : "Ernährung"} · {new Date(conversation.updated_at).toLocaleDateString("de-DE")}</small></span>
+            </button>
+          ))}
+        </section>
+      )}
       {messages.length === 0 && (
         <div className="prompt-chips">
-          {(mode === "plan"
+          {(activeMode === "plan"
             ? [
                 "3 Tage Ganzkörper im Gym",
                 "20 Minuten zu Hause, ohne Geräte",
@@ -407,7 +489,7 @@ function AiDialog({
             </button>
           </div>
         )}
-        {mode === "food" && (
+        {activeMode === "food" && (
           <>
             <input
               ref={cameraRef}
@@ -455,7 +537,7 @@ function AiDialog({
           <textarea
             aria-label="Nachricht an KI"
             placeholder={
-              mode === "plan"
+              activeMode === "plan"
                 ? "Ziel, Trainingstage, Equipment …"
                 : "Was und wie viel? Optional: nur die Hälfte …"
             }
@@ -477,8 +559,8 @@ function AiDialog({
           </button>
         </div>
         <small className="ai-privacy">
-          Nachricht und Foto werden an OpenRouter gesendet. Fotos werden hier
-          nicht gespeichert.
+          Nachrichten werden in deinem privaten Konto gespeichert. Fotos gehen
+          an OpenRouter, werden hier aber nicht gespeichert.
         </small>
       </form>
     </Modal>

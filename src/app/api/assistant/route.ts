@@ -6,11 +6,12 @@ import { aiResult } from "@/lib/ai/schema";
 export const maxDuration = 60;
 const bodySchema = z.object({
   mode: z.enum(["plan", "food"]),
+  conversation_id: z.string().uuid().optional(),
   messages: z
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().trim().min(1).max(16000),
+        content: z.string().trim().min(1).max(24000),
       }),
     )
     .min(1)
@@ -33,6 +34,48 @@ function reply(error: string, status: number) {
     { error },
     { status, headers: { "Cache-Control": "no-store" } },
   );
+}
+
+function databaseUpgrade() {
+  return reply(
+    "KI-Verläufe brauchen das aktuelle Supabase-Setup. Bitte supabase/setup.sql im SQL Editor ausführen.",
+    503,
+  );
+}
+
+export async function GET(request: Request) {
+  if (!getPublicSupabaseConfig().configured)
+    return reply("Supabase ist noch nicht verbunden.", 503);
+  const db = await createClient();
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) return reply("Bitte erneut anmelden.", 401);
+  const conversationId = new URL(request.url).searchParams.get("conversation_id");
+  if (conversationId) {
+    const { data: conversation, error: conversationError } = await db
+      .from("ai_conversations")
+      .select("id,title,mode,created_at,updated_at")
+      .eq("id", conversationId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (conversationError) return databaseUpgrade();
+    if (!conversation) return reply("Gespräch nicht gefunden.", 404);
+    const { data: messages, error } = await db
+      .from("ai_messages")
+      .select("id,role,content,created_at")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id)
+      .order("created_at");
+    if (error) return databaseUpgrade();
+    return Response.json({ conversation, messages }, { headers: { "Cache-Control": "no-store" } });
+  }
+  const { data: conversations, error } = await db
+    .from("ai_conversations")
+    .select("id,title,mode,created_at,updated_at")
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+    .limit(40);
+  if (error) return databaseUpgrade();
+  return Response.json({ conversations }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -74,13 +117,30 @@ export async function POST(request: Request) {
       "Bitte eine kurze Nachricht oder ein JPG-, PNG- oder WebP-Foto verwenden.",
       400,
     );
+  const { conversation_id: conversationId } = input.data;
+  const { error: conversationsError } = await db
+    .from("ai_conversations")
+    .select("id")
+    .eq("user_id", user.id)
+    .limit(1);
+  if (conversationsError) return databaseUpgrade();
+  if (conversationId) {
+    const { data: conversation, error } = await db
+      .from("ai_conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (error) return databaseUpgrade();
+    if (!conversation) return reply("Gespräch nicht gefunden.", 404);
+  }
   const model = process.env.OPENROUTER_MODEL || "openrouter/free";
   if (model !== "openrouter/free" && !model.endsWith(":free"))
     return reply("Bitte ein kostenloses OpenRouter-Modell konfigurieren.", 503);
   const quota = await db.rpc("claim_ai_request", {});
   if (quota.error)
     return reply(
-      "Datenbank-Update erforderlich: Migration 004 in Supabase ausführen.",
+      "Datenbank-Update erforderlich: supabase/setup.sql im Supabase SQL Editor ausführen.",
       503,
     );
   if (!quota.data)
@@ -172,8 +232,37 @@ export async function POST(request: Request) {
         "Der Vorschlag konnte nicht sicher gelesen werden. Bitte erneut versuchen.",
         502,
       );
+    const lastMessage = messages.at(-1);
+    if (!lastMessage || lastMessage.role !== "user")
+      return reply("Die letzte Nachricht konnte nicht gespeichert werden.", 400);
+    let savedConversationId = conversationId;
+    if (!savedConversationId) {
+      const { data: created, error } = await db
+        .from("ai_conversations")
+        .insert({
+          user_id: user.id,
+          mode,
+          title: lastMessage.content.slice(0, 100),
+        })
+        .select("id")
+        .single();
+      if (error || !created) return databaseUpgrade();
+      savedConversationId = created.id;
+    }
+    const timestamp = Date.now();
+    const { error: saveError } = await db.from("ai_messages").insert([
+      { user_id: user.id, conversation_id: savedConversationId, role: "user", content: lastMessage.content, created_at: new Date(timestamp).toISOString() },
+      { user_id: user.id, conversation_id: savedConversationId, role: "assistant", content: JSON.stringify(parsed.data), created_at: new Date(timestamp + 1).toISOString() },
+    ]);
+    if (saveError) return databaseUpgrade();
+    const { error: updateError } = await db
+      .from("ai_conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", savedConversationId)
+      .eq("user_id", user.id);
+    if (updateError) return databaseUpgrade();
     return Response.json(
-      { result: parsed.data, model: data.model ?? model },
+      { result: parsed.data, model: data.model ?? model, conversation_id: savedConversationId },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {
